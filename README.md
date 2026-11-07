@@ -2,6 +2,8 @@
 
 Adjust the font size, typeface and outline of in-game text for **World of Warcraft: Forever** (Interface 16001), with a live preview. The first release covers the quest window; chat, gossip and map categories will follow.
 
+**Download:** [CurseForge](https://www.curseforge.com/wow/addons/bigfonttuner) (or grab the source from this repository).
+
 - `/bft` (or `/bigfonttuner` if `/bft` is taken by another addon) toggles the settings window.
 - Default changes nothing; "reset" returns to the game's original fonts.
 - Smaller text in the same group (e.g. quest objectives) scales proportionally.
@@ -16,6 +18,8 @@ Adjust the font size, typeface and outline of in-game text for **World of Warcra
 魔獸世界：永恆（Interface 16001）用的字體調整 addon。可以調整遊戲文字的字級、字型和描邊，並即時預覽效果。第一版只支援任務視窗，之後會陸續加入聊天、對話、地圖。
 
 ## 安裝
+
+從 [CurseForge](https://www.curseforge.com/wow/addons/bigfonttuner) 下載（CurseForge App 可自動更新），或直接從這個 repo 取得原始碼。
 
 把整個 `BigFontTuner` 資料夾放到遊戲目錄的 `_forever_/Interface/AddOns/`，然後在角色選擇畫面左下角的「插件」中勾選。
 
