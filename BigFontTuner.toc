@@ -1,0 +1,12 @@
+## Interface: 16001
+## Title: BigFontTuner
+## Notes: 調整遊戲文字的大小、字型與描邊（第一版：任務視窗）
+## Version: 0.2.0
+## Author: AugustusW
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+## SavedVariables: BigFontTunerDB
+## Category: 介面
+
+Fonts.lua
+Core.lua
+Settings.lua
