@@ -9,11 +9,11 @@ ns.FONT_DEFAULT = "default" -- 不換字型，沿用遊戲原本的設定
 ns.FONT_CANDIDATES = {
   -- 2026-11-07 遊戲內實測（pcall SetFont，以不存在的 NOPE 為對照組＝false）以下皆存在。
   -- 名稱依檔名推測，實際樣子以預覽為準。
-  { key = "kai", label = "楷體（bKAI00M，任務預設）", path = "Fonts\\bKAI00M.TTF" },
-  { key = "hei", label = "黑體（bHEI00M）", path = "Fonts\\bHEI00M.TTF" },
-  { key = "heib", label = "黑體粗（bHEI01B）", path = "Fonts\\bHEI01B.TTF" },
-  { key = "lei", label = "bLEI00D", path = "Fonts\\bLEI00D.TTF" },
-  { key = "arkai", label = "AR 楷體（ARKai_T）", path = "Fonts\\ARKai_T.TTF" },
+  { key = "kai", labelKey = "FONT_KAI", path = "Fonts\\bKAI00M.TTF" },
+  { key = "hei", labelKey = "FONT_HEI", path = "Fonts\\bHEI00M.TTF" },
+  { key = "heib", labelKey = "FONT_HEI_BOLD", path = "Fonts\\bHEI01B.TTF" },
+  { key = "lei", labelKey = "FONT_LEI", path = "Fonts\\bLEI00D.TTF" },
+  { key = "arkai", labelKey = "FONT_ARKAI", path = "Fonts\\ARKai_T.TTF" },
   -- 存在但不列入：ARKai_C、ARHei 推測為簡中字型（可能缺繁體字）；FRIZQT__、ARIALN 是英文字型（中文會變方塊）。
   -- 自訂字型：把 .ttf 放到 BigFontTuner/Fonts/ 底下，在這裡加一行。字型必須有中文字，否則會顯示成方塊。
   -- { key = "noto", label = "思源黑體", path = "Interface\\AddOns\\BigFontTuner\\Fonts\\NotoSansTC.ttf" },
@@ -23,13 +23,17 @@ ns.FONT_CANDIDATES = {
 local available
 function ns.GetAvailableFonts()
   if available then return available end
-  available = { { key = ns.FONT_DEFAULT, label = "遊戲預設", path = nil } }
+  available = { { key = ns.FONT_DEFAULT, labelKey = "FONT_GAME_DEFAULT", path = nil } }
   for _, f in ipairs(ns.FONT_CANDIDATES) do
     if ns.FontExists(f.path) then
       table.insert(available, f)
     end
   end
   return available
+end
+
+function ns.FontLabel(f)
+  return f.label or ns.L[f.labelKey]
 end
 
 function ns.FindFont(key)

@@ -6,6 +6,8 @@ Adjust the font size, typeface and outline of in-game text for **World of Warcra
 - Default changes nothing; "reset" returns to the game's original fonts.
 - Smaller text in the same group (e.g. quest objectives) scales proportionally.
 - Settings are saved account-wide. MIT licensed.
+- UI text follows the client language (Traditional Chinese on zhTW clients, English elsewhere), or pick a language in the settings.
+- Settings live under Options → AddOns → BigFontTuner; /bft jumps there, or opens a standalone window if it can't (e.g. in combat).
 
 ---
 
@@ -22,7 +24,8 @@ Adjust the font size, typeface and outline of in-game text for **World of Warcra
 ## 使用
 
 - 輸入 `/bigfonttuner` 開啟設定。如果 `/bft` 沒被其他 addon 佔用，也可以用 `/bft`。
-- 指令會開關一個獨立的設定視窗，可以拖曳，按 Esc 關閉。如果遊戲的選項裡有「插件」分類，那裡也會有一個「開啟設定視窗」按鈕。
+- 設定放在「選項 → 插件 → BigFontTuner」。輸入指令會先嘗試跳到那一頁；跳不過去（或戰鬥中）時改開同樣內容的獨立視窗，可以拖曳，按 Esc 關閉。
+- 介面語言預設跟隨客戶端（只有繁中客戶端顯示中文，其他語系顯示英文），也可以在設定裡選「English／繁體中文」，切換後按「重新載入」套用。
 - 標題字級、內文字級、字型、描邊調整後都會立即套用，設定自動儲存，同帳號的角色共用。
 - 預設不更動任何字型（維持遊戲原樣）；「恢復此分類預設」會回到遊戲原始狀態。同一組裡的小字（例如任務目標）會依原始比例一起縮放。
 - 戰鬥中也能開設定視窗。
@@ -38,9 +41,12 @@ addon 啟動時會逐一檢查字型檔，載入失敗的不會出現在選單�
 
 | 檔案 | 內容 |
 |---|---|
+| `Locale.lua` | 介面文字（enUS、zhTW），其他語系退回英文 |
 | `Fonts.lua` | 候選字型清單與存在檢查（用 pcall 包 SetFont，檔案不存在時 SetFont 會報錯） |
 | `Core.lua` | 分類定義、設定儲存（`BigFontTunerDB`）、套用字型、斜線指令 |
-| `Settings.lua` | 獨立設定視窗與即時預覽（內建選項只放入口按鈕） |
+| `Settings.lua` | 設定內容與即時預覽：主要在「選項 → 插件」頁，/bft 跳不過去時才開獨立視窗 |
+| `Media/icon.tga` | 插件清單圖示（64×64） |
+| `assets/` | CurseForge 用 logo（Codex 生成），不打包進 addon |
 
 ## 測試
 

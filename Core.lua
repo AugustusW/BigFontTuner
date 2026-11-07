@@ -2,9 +2,9 @@
 local addonName, ns = ...
 
 ns.OUTLINES = {
-  { key = "", label = "無" },
-  { key = "OUTLINE", label = "描邊" },
-  { key = "THICKOUTLINE", label = "粗描邊" },
+  { key = "", labelKey = "OUTLINE_NONE" },
+  { key = "OUTLINE", labelKey = "OUTLINE_NORMAL" },
+  { key = "THICKOUTLINE", labelKey = "OUTLINE_THICK" },
 }
 
 ns.SIZE_MIN, ns.SIZE_MAX = 10, 32
@@ -15,16 +15,20 @@ ns.SIZE_MIN, ns.SIZE_MAX = 10, 32
 -- 預設值 nil＝不改，沿用遊戲原本的字級；「恢復預設」就是回到遊戲原始狀態。
 ns.CATEGORIES = {
   {
-    key = "quest", label = "任務", enabled = true,
+    key = "quest", labelKey = "CATEGORY_QUEST", enabled = true,
     title = { "QuestTitleFont", "QuestTitleFontBlackShadow" },
     body = { "QuestFont", "QuestFontNormalSmall" },
   },
-  { key = "chat", label = "聊天", enabled = false },
-  { key = "gossip", label = "對話", enabled = false },
-  { key = "map", label = "地圖", enabled = false },
+  { key = "chat", labelKey = "CATEGORY_CHAT", enabled = false },
+  { key = "gossip", labelKey = "CATEGORY_GOSSIP", enabled = false },
+  { key = "map", labelKey = "CATEGORY_MAP", enabled = false },
 }
 
 local DEFAULTS = { font = "default", outline = "" } -- titleSize／bodySize 預設為 nil
+
+function ns.Label(item)
+  return item.label or ns.L[item.labelKey]
+end
 
 function ns.GetCategory(key)
   for _, c in ipairs(ns.CATEGORIES) do
@@ -120,6 +124,7 @@ local function initDB()
   if type(BigFontTunerDB) ~= "table" then BigFontTunerDB = {} end
   local db = BigFontTunerDB
   db.version = 1
+  if not (db.locale == "auto" or ns.LOCALES[db.locale]) then db.locale = "auto" end
   if type(db.categories) ~= "table" then db.categories = {} end
   for _, c in ipairs(ns.CATEGORIES) do
     if c.enabled then

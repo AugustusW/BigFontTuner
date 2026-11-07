@@ -1,9 +1,11 @@
--- 設定頁：放在遊戲內建「選項 → 插件」裡的自訂畫布（canvas layout），附即時預覽。
+-- 設定畫面：主要放在內建「選項 → 插件 → BigFontTuner」（使用者 2026-11-07 選 B）。
+-- /bft 先試著跳到那一頁；跳不過去（永恆實測 OpenToCategory(ID) 沒反應）才開同樣內容的獨立視窗，共用同一份設定。
 -- 預覽的文字直接掛在被調整的字型物件上（SetFontObject），所以預覽看到的就是實際套用的結果。
 local addonName, ns = ...
+local L = ns.L
 
-local selected = "quest" -- 目前選中的分類
-local widgets = {}
+local selected = "quest" -- 目前選中的分類（兩份畫面共用）
+local instances = {}      -- 每份畫面的元件，用來一起重新整理
 
 local function cur()
   return ns.db.categories[selected]
@@ -17,7 +19,7 @@ local function makeSlider(parent, label, y, onChange)
   local s = CreateFrame("Slider", nil, parent, "BackdropTemplate")
   s:SetOrientation("HORIZONTAL")
   s:SetSize(150, 16)
-  s:SetPoint("TOPLEFT", 110, y + 2)
+  s:SetPoint("TOPLEFT", 120, y + 2)
   s:SetBackdrop({
     bgFile = "Interface\\Buttons\\UI-SliderBar-Background",
     edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
@@ -56,72 +58,35 @@ local function makeDropdown(parent, label, y, buildItems)
   text:SetText(label)
 
   local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
-  dd:SetWidth(170)
-  dd:SetPoint("TOPLEFT", 106, y + 6)
+  dd:SetWidth(180)
+  dd:SetPoint("TOPLEFT", 116, y + 6)
   dd:SetupMenu(function(_, root) buildItems(root) end)
   return dd
 end
 
--- 把目前分類的設定值顯示到元件上
-local function refresh()
-  local s = cur()
-  if not s then return end
-  widgets.title:SetSilently(ns.GetGroupSize(selected, "title"))
-  widgets.body:SetSilently(ns.GetGroupSize(selected, "body"))
-  widgets.font:GenerateMenu()
-  widgets.outline:GenerateMenu()
-  for key, b in pairs(widgets.tabs) do
-    if key == selected then b:LockHighlight() else b:UnlockHighlight() end
+-- 把目前分類的設定值顯示到每一份畫面上
+local function refreshAll()
+  if not cur() then return end
+  for _, w in ipairs(instances) do
+    w.title:SetSilently(ns.GetGroupSize(selected, "title"))
+    w.body:SetSilently(ns.GetGroupSize(selected, "body"))
+    w.font:GenerateMenu()
+    w.outline:GenerateMenu()
+    w.language:GenerateMenu()
+    for key, b in pairs(w.tabs) do
+      if key == selected then b:LockHighlight() else b:UnlockHighlight() end
+    end
   end
 end
 
 local function changed()
   ns.ApplyCategory(selected, true)
+  refreshAll()
 end
 
--- 2026-11-07 遊戲內實測：註冊到內建選項後，Settings.OpenToCategory 打不開這一頁，
--- 選項視窗裡也找不到（Settings.GetCategory 回 nil）。所以設定畫面改成獨立視窗（mockup 方案 B 的形式），
--- 內容與預覽照舊；內建選項只放一個「開啟設定視窗」按鈕，能註冊就註冊，失敗也不影響 /bft。
-local win
-
-local function createWindow()
-  local ok, w = pcall(CreateFrame, "Frame", "BigFontTunerWindow", UIParent, "BasicFrameTemplateWithInset")
-  if not ok then
-    w = CreateFrame("Frame", "BigFontTunerWindow", UIParent, "BackdropTemplate")
-  end
-  w:SetSize(660, 400)
-  w:SetPoint("CENTER")
-  w:SetFrameStrata("DIALOG")
-  w:SetMovable(true)
-  w:EnableMouse(true)
-  w:RegisterForDrag("LeftButton")
-  w:SetScript("OnDragStart", w.StartMoving)
-  w:SetScript("OnDragStop", w.StopMovingOrSizing)
-  w:Hide()
-  if w.TitleText then w.TitleText:SetText("BigFontTuner") end
-  tinsert(UISpecialFrames, "BigFontTunerWindow") -- 按 Esc 可以關閉
-  return w
-end
-
-local function registerOptionsEntry()
-  local opt = CreateFrame("Frame")
-  local t = opt:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  t:SetPoint("TOPLEFT", 16, -16)
-  t:SetText("BigFontTuner")
-  local b = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
-  b:SetSize(160, 24)
-  b:SetPoint("TOPLEFT", 16, -50)
-  b:SetText("開啟設定視窗")
-  b:SetScript("OnClick", function() ns.OpenSettings() end)
-  local category = Settings.RegisterCanvasLayoutCategory(opt, "BigFontTuner")
-  Settings.RegisterAddOnCategory(category)
-end
-
-function ns.CreateSettings()
-  win = createWindow()
-  local panel = CreateFrame("Frame", nil, win)
-  panel:SetPoint("TOPLEFT", 4, -24)
-  panel:SetPoint("BOTTOMRIGHT", -4, 4)
+-- 在 panel 裡建一份完整的設定內容
+local function buildContent(panel)
+  local w = {}
 
   local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetPoint("TOPLEFT", 16, -16)
@@ -131,64 +96,92 @@ function ns.CreateSettings()
   ver:SetText("v" .. (C_AddOns.GetAddOnMetadata(addonName, "Version") or "?"))
 
   -- 分類頁籤
-  widgets.tabs = {}
+  w.tabs = {}
   local prev
   for _, c in ipairs(ns.CATEGORIES) do
     local b = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    b:SetSize(c.enabled and 70 or 100, 22)
-    b:SetText(c.enabled and c.label or (c.label .. "（之後）"))
+    local label = ns.Label(c)
+    b:SetSize(c.enabled and 80 or 110, 22)
+    b:SetText(c.enabled and label or L.COMING_LATER:format(label))
     if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 16, -46) end
     if c.enabled then
-      b:SetScript("OnClick", function() selected = c.key; refresh() end)
+      b:SetScript("OnClick", function() selected = c.key; refreshAll() end)
     else
       b:Disable()
     end
-    widgets.tabs[c.key] = b
+    w.tabs[c.key] = b
     prev = b
   end
 
   -- 左側：設定
-  widgets.title = makeSlider(panel, "標題字級", -90, function(v) cur().titleSize = v; changed() end)
-  widgets.body = makeSlider(panel, "內文字級", -124, function(v) cur().bodySize = v; changed() end)
+  w.title = makeSlider(panel, L.TITLE_SIZE, -96, function(v) cur().titleSize = v; changed() end)
+  w.body = makeSlider(panel, L.BODY_SIZE, -130, function(v) cur().bodySize = v; changed() end)
 
-  widgets.font = makeDropdown(panel, "字型", -162, function(root)
+  w.font = makeDropdown(panel, L.FONT, -168, function(root)
     for _, f in ipairs(ns.GetAvailableFonts()) do
-      root:CreateRadio(f.label,
+      root:CreateRadio(ns.FontLabel(f),
         function() return cur().font == f.key end,
         function() cur().font = f.key; changed() end)
     end
   end)
 
-  widgets.outline = makeDropdown(panel, "描邊", -200, function(root)
+  w.outline = makeDropdown(panel, L.OUTLINE, -206, function(root)
     for _, o in ipairs(ns.OUTLINES) do
-      root:CreateRadio(o.label,
+      root:CreateRadio(ns.Label(o),
         function() return cur().outline == o.key end,
         function() cur().outline = o.key; changed() end)
     end
   end)
 
   local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-  reset:SetSize(140, 22)
-  reset:SetPoint("TOPLEFT", 16, -240)
-  reset:SetText("恢復此分類預設")
-  reset:SetScript("OnClick", function() ns.ResetCategory(selected); refresh() end)
+  reset:SetSize(150, 22)
+  reset:SetPoint("TOPLEFT", 16, -246)
+  reset:SetText(L.RESET)
+  reset:SetScript("OnClick", function() ns.ResetCategory(selected); refreshAll() end)
+
+  -- 介面語言：切換後要重新載入介面才會套用（文字在建立畫面時就決定了）
+  local reloadNote, reloadBtn
+  w.language = makeDropdown(panel, L.LANGUAGE, -290, function(root)
+    for _, c in ipairs(ns.LANGUAGE_CHOICES) do
+      root:CreateRadio(c.label or L.LANGUAGE_AUTO,
+        function() return ns.db.locale == c.key end,
+        function()
+          ns.db.locale = c.key
+          for _, inst in ipairs(instances) do inst.showReload() end
+        end)
+    end
+  end)
+  reloadNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  reloadNote:SetPoint("TOPLEFT", 16, -320)
+  reloadNote:SetText(L.RELOAD_NOTE)
+  reloadNote:Hide()
+  reloadBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  reloadBtn:SetSize(120, 22)
+  reloadBtn:SetPoint("LEFT", reloadNote, "RIGHT", 8, 0)
+  reloadBtn:SetText(L.RELOAD)
+  reloadBtn:SetScript("OnClick", function() ReloadUI() end)
+  reloadBtn:Hide()
+  function w.showReload() reloadNote:Show(); reloadBtn:Show() end
 
   -- 右側：預覽（仿任務視窗的羊皮紙底）
+  local plabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  plabel:SetPoint("TOPLEFT", 340, -80)
+  plabel:SetText(L.PREVIEW)
+
   local box = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-  box:SetPoint("TOPLEFT", 320, -84)
-  box:SetSize(300, 260)
+  box:SetPoint("TOPLEFT", plabel, "BOTTOMLEFT", -2, -6)
+  box:SetSize(300, 250)
   box:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 },
   })
-  box:SetBackdropColor(0.91, 0.84, 0.66, 1)
   box:SetBackdropBorderColor(0.42, 0.35, 0.23, 1)
+  -- 底色用貼圖畫：2026-11-07 實測 SetBackdropColor 在這裡沒有效果，預覽框是白的
+  local bg = box:CreateTexture(nil, "BACKGROUND")
+  bg:SetPoint("TOPLEFT", 3, -3)
+  bg:SetPoint("BOTTOMRIGHT", -3, 3)
+  bg:SetColorTexture(0.91, 0.84, 0.66, 1)
   box:SetClipsChildren(true) -- 字級調到很大時，文字不要溢出預覽框
-
-  local plabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  plabel:SetPoint("BOTTOMLEFT", box, "TOPLEFT", 2, 4)
-  plabel:SetText("預覽（即時更新）")
 
   local function line(fontObject, text, anchor, gap)
     local fs = box:CreateFontString(nil, "ARTWORK")
@@ -200,25 +193,95 @@ function ns.CreateSettings()
     fs:SetText(text)
     return fs
   end
-  local p1 = line(QuestTitleFont, "十字路口的徵兵行動")
-  local p2 = line(QuestFont, "從卡加雨的前哨站往西走。在T字路口左轉，然後朝南走。", p1, 6)
-  local p3 = line(QuestTitleFont, "描述", p2, 10)
-  line(QuestFont, "把這份簽好的募兵函拿到十字路口去。", p3, 6)
+  local p1 = line(QuestTitleFont, L.SAMPLE_TITLE)
+  local p2 = line(QuestFont, L.SAMPLE_BODY, p1, 6)
+  local p3 = line(QuestTitleFont, L.SAMPLE_HEADER, p2, 10)
+  line(QuestFont, L.SAMPLE_BODY2, p3, 6)
 
   local hint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-  hint:SetPoint("BOTTOMLEFT", 16, 16)
+  hint:SetPoint("BOTTOMLEFT", 16, 14)
+  hint:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
   hint:SetJustifyH("LEFT")
-  hint:SetText("調整後立即套用，設定自動儲存（帳號共用）。字型清單只列出驗證過存在的字型。\n指令：/bigfonttuner" .. (SLASH_BIGFONTTUNER2 and "、/bft" or ""))
+  hint:SetText(L.HINT .. "\n" .. L.COMMANDS:format("/bigfonttuner" .. (SLASH_BIGFONTTUNER2 and ", /bft" or "")))
 
-  panel:SetScript("OnShow", refresh)
+  panel:HookScript("OnShow", refreshAll)
+  table.insert(instances, w)
+  return w
+end
 
+local win
+
+local function createWindow()
+  local ok, f = pcall(CreateFrame, "Frame", "BigFontTunerWindow", UIParent, "BasicFrameTemplateWithInset")
+  if not ok then
+    f = CreateFrame("Frame", "BigFontTunerWindow", UIParent, "BackdropTemplate")
+  end
+  f:SetSize(680, 470)
+  f:SetPoint("CENTER")
+  f:SetFrameStrata("DIALOG")
+  f:SetMovable(true)
+  f:EnableMouse(true)
+  f:RegisterForDrag("LeftButton")
+  f:SetScript("OnDragStart", f.StartMoving)
+  f:SetScript("OnDragStop", f.StopMovingOrSizing)
+  f:Hide()
+  if f.TitleText then f.TitleText:SetText("BigFontTuner") end
+  tinsert(UISpecialFrames, "BigFontTunerWindow") -- 按 Esc 可以關閉
+  return f
+end
+
+local category, optionsPage
+
+local function registerOptionsPage()
+  optionsPage = CreateFrame("Frame")
+  buildContent(optionsPage)
+  category = Settings.RegisterCanvasLayoutCategory(optionsPage, "BigFontTuner")
+  Settings.RegisterAddOnCategory(category)
+end
+
+-- 獨立視窗只在跳不到選項頁時才建立（使用者 2026-11-07 選 B：設定以選項頁為主）
+local function ensureWindow()
+  if win then return end
+  win = createWindow()
+  local panel = CreateFrame("Frame", nil, win)
+  panel:SetPoint("TOPLEFT", 4, -24)
+  panel:SetPoint("BOTTOMRIGHT", -4, 4)
+  buildContent(panel)
+end
+
+function ns.CreateSettings()
   if Settings and Settings.RegisterCanvasLayoutCategory then
-    pcall(registerOptionsEntry)
+    pcall(registerOptionsPage)
   end
 end
 
--- /bft：開關獨立設定視窗（一般視窗，戰鬥中也能開）
+-- 試著跳到選項 → 插件 → BigFontTuner。OpenToCategory(ID) 在永恆實測沒反應，所以依序試幾種寫法，
+-- 以「我們的頁面真的顯示出來」判斷成功（不看呼叫有沒有報錯）。
+local function tryOpenOptionsPage()
+  if not (category and optionsPage) then return false end
+  local attempts = {
+    function() Settings.OpenToCategory(category:GetID()) end,
+    function() Settings.OpenToCategory(category) end,
+    function() Settings.OpenToCategory("BigFontTuner") end,
+    function() SettingsPanel:Show(); SettingsPanel:SelectCategory(category) end,
+    function() SettingsPanel:OpenToCategory(category:GetID()) end,
+  }
+  for _, attempt in ipairs(attempts) do
+    pcall(attempt)
+    if optionsPage:IsVisible() then return true end
+  end
+  if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
+  return false
+end
+
+-- /bft：優先開選項頁，跳不過去才開獨立視窗。戰鬥中選項面板有 taint 風險，直接用獨立視窗。
 function ns.OpenSettings()
-  if not win then return end
-  if win:IsShown() then win:Hide() else win:Show() end
+  if optionsPage and optionsPage:IsVisible() then
+    HideUIPanel(SettingsPanel)
+    return
+  end
+  if win and win:IsShown() then win:Hide(); return end
+  if not InCombatLockdown() and tryOpenOptionsPage() then return end
+  ensureWindow()
+  win:Show()
 end

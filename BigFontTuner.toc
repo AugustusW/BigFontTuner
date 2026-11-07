@@ -1,12 +1,15 @@
 ## Interface: 16001
 ## Title: BigFontTuner
-## Notes: 調整遊戲文字的大小、字型與描邊（第一版：任務視窗）
+## Notes: Adjust text size, font and outline with a live preview (quest window first)
+## Notes-zhTW: 調整遊戲文字的大小、字型與描邊，附即時預覽（第一版：任務視窗）
 ## Version: 0.2.0
 ## Author: AugustusW
-## IconTexture: Interface\Icons\INV_Misc_Book_09
+## IconTexture: Interface\AddOns\BigFontTuner\Media\icon
 ## SavedVariables: BigFontTunerDB
-## Category: 介面
+## Category: Interface
+## Category-zhTW: 介面
 
+Locale.lua
 Fonts.lua
 Core.lua
 Settings.lua

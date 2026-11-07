@@ -10,6 +10,9 @@ local function stub(name)
     return function(self, ...)
       if k == "SetScript" then local ev, fn = ...; t.scripts[ev] = fn end
       if k == "GetID" then return 42 end
+      if k == "IsVisible" or k == "IsShown" then return rawget(t, "visible") or false end
+      if k == "Show" then rawset(t, "visible", true) end
+      if k == "Hide" then rawset(t, "visible", false) end
       return self
     end
   end })
@@ -56,26 +59,33 @@ UISpecialFrames = {}
 tinsert = table.insert
 function CopyTable(t) local r = {} for k, v in pairs(t) do r[k] = v end return r end
 function InCombatLockdown() return inCombat end
+LOCALE = "zhTW"
+function GetLocale() return LOCALE end
 function print(...) end -- 吃掉 addon 的聊天訊息
 C_AddOns = { GetAddOnMetadata = function() return "0.2.0" end }
+local optionsPage
+OPEN_WORKS = false -- 模擬永恆：OpenToCategory 沒反應
 Settings = {
-  RegisterCanvasLayoutCategory = function() return stub("category") end,
+  RegisterCanvasLayoutCategory = function(page) optionsPage = page; return stub("category") end,
   RegisterAddOnCategory = function() end,
-  OpenToCategory = function(id) opened = id end,
+  OpenToCategory = function(id) opened = id; if OPEN_WORKS and optionsPage then rawset(optionsPage, "visible", true) end end,
 }
+SettingsPanel = stub("SettingsPanel")
+function HideUIPanel(f) rawset(f, "visible", false); if optionsPage then rawset(optionsPage, "visible", false) end end
+function ReloadUI() end
 
 local realPrint = _G.io and function(s) io.write(s, "\n") end
 local function check(c, msg) realPrint((c and "PASS " or "FAIL ") .. msg) if not c then FAILED = true end end
 
 local function boot(db, otherSlash)
-  frames, opened, inCombat = {}, nil, false
+  frames, opened, inCombat, window, optionsPage = {}, nil, false, nil, nil
   resetGlobals()
   for k in pairs(_G) do if type(k) == "string" and k:sub(1, 6) == "SLASH_" then _G[k] = nil end end
   if otherSlash then SLASH_OTHER1 = "/bft" end
   SlashCmdList = {}
   BigFontTunerDB = db
   local ns = {}
-  for _, f in ipairs({ "Fonts.lua", "Core.lua", "Settings.lua" }) do
+  for _, f in ipairs({ "Locale.lua", "Fonts.lua", "Core.lua", "Settings.lua" }) do
     assert(loadfile(DIR .. "/" .. f))("BigFontTuner", ns)
   end
   return ns
@@ -113,16 +123,22 @@ check(QuestFont.file == "Fonts\\bKAI00M.TTF", "切回遊戲預設還原原始字
 ns.ResetCategory("quest")
 check(QuestFont.size == 14 and QuestFontNormalSmall.size == 12 and QuestFont.flags == "", "恢復預設回到原始 14/12、無描邊")
 
--- 5. 指令開關獨立設定視窗（戰鬥中也能開），Esc 可關
+-- 5. /bft：先試著跳到選項頁；跳不過去才開獨立視窗（使用者選 B）
 SlashCmdList.BIGFONTTUNER("")
-check(window and window.shown == true, "指令打開設定視窗")
+check(window and window.shown == true, "跳不到選項頁時開獨立視窗")
 SlashCmdList.BIGFONTTUNER("")
-check(window.shown == false, "再打一次關閉")
+check(window.shown == false, "再打一次關閉視窗")
 check(UISpecialFrames[1] == "BigFontTunerWindow", "註冊 Esc 關閉")
+OPEN_WORKS = true; window.shown = false
+SlashCmdList.BIGFONTTUNER("")
+check(rawget(optionsPage, "visible") == true and window.shown == false, "跳得到選項頁時不開視窗")
+SlashCmdList.BIGFONTTUNER("")
+check(rawget(optionsPage, "visible") == false, "選項頁開著時再打一次關閉")
+OPEN_WORKS = false
 inCombat = true
 SlashCmdList.BIGFONTTUNER("")
-check(window.shown == true, "戰鬥中也能開（一般視窗不受保護）")
-inCombat = false
+check(window.shown == true, "戰鬥中直接開獨立視窗")
+inCombat = false; window.shown = false
 
 -- 6. 已存設定保留；壞掉的值會被修正，不讓登入中斷
 ns = boot({ version = 1, categories = { quest = { bodySize = 24, titleSize = "abc", outline = "BAD", font = "zzz" } } }, false)
@@ -134,5 +150,25 @@ check(q.titleSize == nil and q.outline == "" and q.font == "default", "非法值
 check(SLASH_BIGFONTTUNER2 == "/bft", "/bft 未被佔用時註冊")
 ns = boot({ categories = { quest = { bodySize = 99 } } }, false); login()
 check(ns.db.categories.quest.bodySize == 32, "超出範圍的字級夾到上限 32")
+
+-- 7. 語系：英文客戶端顯示英文，繁中客戶端顯示中文
+LOCALE = "enUS"; ns = boot(nil, false); login()
+check(ns.Label(ns.GetCategory("quest")) == "Quest", "enUS 分類名稱是英文（得到 " .. tostring(ns.Label(ns.GetCategory("quest"))) .. "）")
+check(ns.FontLabel(ns.GetAvailableFonts()[1]) == "Game default", "enUS 字型選單是英文")
+check(ns.L.RESET == "Reset category", "enUS 按鈕文字是英文")
+LOCALE = "zhTW"; ns = boot(nil, false); login()
+check(ns.Label(ns.GetCategory("quest")) == "任務", "zhTW 分類名稱是中文")
+check(ns.L.RESET == "恢復此分類預設", "zhTW 按鈕文字是中文")
+LOCALE = "deDE"; ns = boot(nil, false); login()
+check(ns.L.RESET == "Reset category", "其他語系退回英文")
+-- 8. 介面語言選項：設定裡指定的語言優先於客戶端語系；不合法的值改回自動
+LOCALE = "enUS"; ns = boot({ locale = "zhTW" }, false); login()
+check(ns.L.RESET == "恢復此分類預設", "英文客戶端選繁體中文時顯示中文")
+LOCALE = "zhTW"; ns = boot({ locale = "enUS" }, false); login()
+check(ns.L.RESET == "Reset category", "繁中客戶端選 English 時顯示英文")
+LOCALE = "zhTW"; ns = boot({ locale = "xxXX" }, false); login()
+check(ns.db.locale == "auto" and ns.L.RESET == "恢復此分類預設", "不合法的語言設定改回自動")
+for k, v in pairs(ns.LOCALES.enUS) do if type(v) ~= "string" then check(false, "L." .. k .. " 不是字串") end
+  if ns.LOCALES.zhTW[k] == nil then check(false, "zhTW 缺少 " .. k) end end
 
 os.exit(FAILED and 1 or 0)
