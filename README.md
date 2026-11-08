@@ -11,11 +11,17 @@ Adjust the font size, typeface and outline of in-game text for **World of Warcra
 - UI text follows the client language (Traditional Chinese on zhTW clients, English elsewhere), or pick a language in the settings.
 - Settings live under Options → AddOns → BigFontTuner; /bft jumps there, or opens a standalone window if it can't (e.g. in combat).
 
+- Issues / support: support@augustusw.com
+
 ---
 
 ## 中文說明
 
 魔獸世界：永恆（Interface 16001）用的字體調整 addon。可以調整遊戲文字的字級、字型和描邊，並即時預覽效果。第一版只支援任務視窗，之後會陸續加入聊天、對話、地圖。
+
+## 問題回報
+
+support@augustusw.com
 
 ## 安裝
 

@@ -29,6 +29,7 @@ local enUS = {
   OPEN_WINDOW = "Open settings window",
   HINT = "Changes apply immediately and are saved account-wide. Only fonts found on this client are listed.",
   COMMANDS = "Commands: %s",
+  BFT_TAKEN = "BigFontTuner: /bft is used by another addon, type /bigfonttuner instead.",
 
   SAMPLE_TITLE = "A Journey Begins",
   SAMPLE_BODY = "Follow the mountain road west, turn left at the fork, and find the old hunter at the camp.",
@@ -63,6 +64,7 @@ local zhTW = {
   OPEN_WINDOW = "開啟設定視窗",
   HINT = "調整後立即套用，設定自動儲存（帳號共用）。字型清單只列出這台電腦上存在的字型。",
   COMMANDS = "指令：%s",
+  BFT_TAKEN = "BigFontTuner：/bft 已被其他插件使用，請改打 /bigfonttuner。",
 
   SAMPLE_TITLE = "旅途的起點",
   SAMPLE_BODY = "沿著山路往西走，在岔路口左轉，找到營地裡的老獵人。",

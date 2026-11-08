@@ -2,8 +2,9 @@
 ## Title: BigFontTuner
 ## Notes: Adjust text size, font and outline with a live preview (quest window first)
 ## Notes-zhTW: 調整遊戲文字的大小、字型與描邊，附即時預覽（第一版：任務視窗）
-## Version: 0.2.0
+## Version: 0.2.1
 ## Author: AugustusW
+## X-Email: support@augustusw.com
 ## IconTexture: Interface\AddOns\BigFontTuner\Media\icon
 ## SavedVariables: BigFontTunerDB
 ## Category: Interface

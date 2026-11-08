@@ -160,12 +160,17 @@ local function slashTaken(cmd)
   return false
 end
 
-local function registerSlash()
-  SLASH_BIGFONTTUNER1 = "/bigfonttuner"
-  if not slashTaken("/bft") then
+-- /bigfonttuner 在載入當下就註冊，不等登入，也不受登入時其他步驟出錯影響
+-- （CurseForge 回報「Slash commands do not work」：登入流程中途出錯時，原本排在後面的註冊不會執行）
+SLASH_BIGFONTTUNER1 = "/bigfonttuner"
+SlashCmdList.BIGFONTTUNER = function() ns.OpenSettings() end
+
+local function registerShortSlash()
+  if slashTaken("/bft") then
+    print(ns.L.BFT_TAKEN)
+  else
     SLASH_BIGFONTTUNER2 = "/bft"
   end
-  SlashCmdList.BIGFONTTUNER = function() ns.OpenSettings() end
 end
 
 local ev = CreateFrame("Frame")
@@ -176,10 +181,11 @@ ev:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == addonName then
     initDB()
   elseif event == "PLAYER_LOGIN" then
-    dropMissingFonts()
-    registerSlash()
-    ns.ApplyAll()
-    ns.CreateSettings()
+    -- 每一步各自 pcall：任何一步出錯都不影響其他步驟（尤其是指令註冊）
+    for _, step in ipairs({ registerShortSlash, dropMissingFonts, ns.ApplyAll, ns.CreateSettings }) do
+      local ok, err = pcall(step)
+      if not ok and geterrorhandler then geterrorhandler()(err) end
+    end
   elseif event == "PLAYER_ENTERING_WORLD" then
     -- 其他 addon 可能在登入後才改字型，進入世界時再套用一次，確保我們的設定生效
     ns.ApplyAll()

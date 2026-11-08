@@ -171,4 +171,20 @@ check(ns.db.locale == "auto" and ns.L.RESET == "恢復此分類預設", "不合�
 for k, v in pairs(ns.LOCALES.enUS) do if type(v) ~= "string" then check(false, "L." .. k .. " 不是字串") end
   if ns.LOCALES.zhTW[k] == nil then check(false, "zhTW 缺少 " .. k) end end
 
+-- 9. 使用者回報「Slash commands do not work」：登入時其他步驟出錯，也不能讓指令沒註冊
+ns = boot(nil, false)
+check(SLASH_BIGFONTTUNER1 == "/bigfonttuner" and type(SlashCmdList.BIGFONTTUNER) == "function", "載入當下就註冊 /bigfonttuner（不等登入）")
+ns.GetCategory = function() error("font list broken") end -- 讓登入時的字型檢查出錯
+local okLogin = pcall(login)
+check(SLASH_BIGFONTTUNER1 == "/bigfonttuner" and type(SlashCmdList.BIGFONTTUNER) == "function", "登入流程出錯時指令仍可用")
+check(SLASH_BIGFONTTUNER2 == "/bft", "登入流程出錯時 /bft 仍註冊")
+-- /bft 被其他插件佔用：聊天框提示改用 /bigfonttuner
+local printed = {}
+print = function(s) printed[#printed + 1] = tostring(s) end
+ns = boot(nil, true); login()
+local found = false
+for _, s in ipairs(printed) do if s:find("/bigfonttuner", 1, true) then found = true end end
+check(found, "/bft 被佔用時提示改用 /bigfonttuner")
+print = function() end
+
 os.exit(FAILED and 1 or 0)
