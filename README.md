@@ -11,7 +11,9 @@ Adjust the font size, typeface and outline of in-game text for **World of Warcra
 - UI text follows the client language (Traditional Chinese on zhTW clients, English elsewhere), or pick a language in the settings.
 - Settings live under Options → AddOns → BigFontTuner; /bft jumps there, or opens a standalone window if it can't (e.g. in combat).
 
-- Issues / support: support@augustusw.com
+- Issues / support: support@augustusw.com · [Buy me a coffee / 請我喝杯咖啡](https://link.augustusw.com/coffee)
+
+If this addon helps you, a star on the repo helps other players find it. 覺得好用的話，幫這個 repo 按個星，能讓其他玩家更容易找到。
 
 ---
 
