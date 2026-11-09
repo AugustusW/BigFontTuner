@@ -9,19 +9,48 @@ ns.OUTLINES = {
 
 ns.SIZE_MIN, ns.SIZE_MAX = 10, 32
 
--- 分類：每個分類有「標題」與「內文」兩組字型物件。第一版只開放任務。
--- 每組第一個物件是基準：滑桿顯示與設定的是它的字級，組內其他物件依原始比例跟著縮放
+-- 分類：每個分類有「標題」與「內文」兩組字型物件（沒有標題組的分類，設定頁只顯示內文字級）。
+-- 組的成員是全域名稱：字型物件、FontString、有 SetFont 的框架，或按鈕（取它的文字）；客戶端沒有的直接略過。
+-- 組也可以是函式（每次套用時才列出，例如聊天視窗數量會變）。
+-- 每組第一個找得到的物件是基準：滑桿顯示與設定的是它的字級，組內其他物件依原始比例跟著縮放
 -- （例如目標小字原本比內文小，放大後仍維持比例）。
 -- 預設值 nil＝不改，沿用遊戲原本的字級；「恢復預設」就是回到遊戲原始狀態。
+-- 聊天、對話、地圖（使用者 2026-11-09）：沒有在永恆探測過，用常見名稱，使用者遊戲內驗證。
+local function chatFrames()
+  local list = { "ChatFontNormal" }
+  for i = 1, (NUM_CHAT_WINDOWS or 10) do list[#list + 1] = "ChatFrame" .. i end
+  return list
+end
+
+local function gossipBody()
+  local list = { "GossipGreetingText" }
+  for i = 1, 32 do list[#list + 1] = "GossipTitleButton" .. i end
+  return list
+end
+
 ns.CATEGORIES = {
   {
     key = "quest", labelKey = "CATEGORY_QUEST", enabled = true,
     title = { "QuestTitleFont", "QuestTitleFontBlackShadow" },
     body = { "QuestFont", "QuestFontNormalSmall" },
   },
-  { key = "chat", labelKey = "CATEGORY_CHAT", enabled = false },
-  { key = "gossip", labelKey = "CATEGORY_GOSSIP", enabled = false },
-  { key = "map", labelKey = "CATEGORY_MAP", enabled = false },
+  {
+    -- 聊天字級遊戲本身就能設：沒設字級時維持遊戲的字級，只換字型與描邊；
+    -- 遊戲改字級（FCF_SetChatWindowFontSize）時記下新的遊戲字級並重新套用，避免字型被洗掉、恢復預設也回得去
+    key = "chat", labelKey = "CATEGORY_CHAT", enabled = true,
+    body = chatFrames, hooks = { "FCF_SetChatWindowFontSize" },
+  },
+  {
+    key = "gossip", labelKey = "CATEGORY_GOSSIP", enabled = true,
+    title = { "GossipFrameNpcNameText" },
+    body = gossipBody, events = { "GOSSIP_SHOW" },
+  },
+  {
+    key = "map", labelKey = "CATEGORY_MAP", enabled = true,
+    title = { "ZoneTextFont", "SubZoneTextFont", "PVPInfoTextFont" },
+    body = { "MinimapZoneText", "WorldMapTextFont" },
+    events = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" },
+  },
 }
 
 local DEFAULTS = { font = "default", outline = "" } -- titleSize／bodySize 預設為 nil
@@ -36,18 +65,36 @@ function ns.GetCategory(key)
   end
 end
 
--- 每個字型物件第一次被改之前的原始設定（檔案、大小、樣式）
+-- 每個字型物件第一次被改之前的原始設定（檔案、大小、樣式），以物件為鍵
 local originals = {}
 
-local function remember(name)
+-- 名稱 → 有 GetFont／SetFont 的物件；按鈕取它的文字；找不到回 nil
+local function resolve(name)
   local obj = _G[name]
-  if not (obj and obj.GetFont) then return nil end
-  if not originals[name] then
-    local file, size, flags = obj:GetFont()
-    if not file then return nil end
-    originals[name] = { file = file, size = size, flags = flags or "" }
+  if type(obj) ~= "table" then return nil end
+  if not obj.GetFont and obj.GetFontString then obj = obj:GetFontString() end
+  if type(obj) == "table" and obj.GetFont and obj.SetFont then return obj end
+  return nil
+end
+
+local function remember(obj)
+  if not obj then return nil end
+  if not originals[obj] then
+    local ok, file, size, flags = pcall(obj.GetFont, obj)
+    if not (ok and file and size) then return nil end
+    originals[obj] = { file = file, size = size, flags = flags or "" }
   end
-  return originals[name]
+  return originals[obj]
+end
+
+local function members(group)
+  if type(group) == "function" then group = group() end
+  local list = {}
+  for _, name in ipairs(group or {}) do
+    local obj = resolve(name)
+    if obj then list[#list + 1] = obj end
+  end
+  return list
 end
 
 -- 某組目前的基準字級（設定值，或基準物件的原始字級），給滑桿顯示用
@@ -56,24 +103,26 @@ function ns.GetGroupSize(categoryKey, group)
   local s = ns.db.categories[categoryKey]
   local value = s[group .. "Size"]
   if value then return value end
-  local base = remember(cat[group][1])
+  local base = remember(members(cat[group])[1])
   return base and math.floor(base.size + 0.5) or 14
 end
 
 -- restore=true 時，全部是預設值的組會還原成原始設定；否則不碰（不覆蓋其他 addon 的字型）
-local function applyGroup(names, size, settings, restore)
+local function applyGroup(group, size, settings, restore)
+  if not group then return end
   local font = settings.font ~= ns.FONT_DEFAULT and ns.FindFont(settings.font) or nil
   local untouched = not size and not font and settings.outline == ""
   if untouched and not restore then return end
-  local base = remember(names[1])
-  for _, name in ipairs(names) do
-    local orig = untouched and originals[name] or remember(name)
+  local objs = members(group)
+  local base = remember(objs[1])
+  for _, obj in ipairs(objs) do
+    local orig = untouched and originals[obj] or remember(obj)
     if orig then
       local s = orig.size
       if size and base and base.size > 0 then
         s = math.floor(orig.size * size / base.size + 0.5)
       end
-      _G[name]:SetFont(font and font.path or orig.file, s, untouched and orig.flags or settings.outline)
+      pcall(obj.SetFont, obj, font and font.path or orig.file, s, untouched and orig.flags or settings.outline)
     end
   end
 end
@@ -83,8 +132,56 @@ function ns.ApplyCategory(key, restore)
   local cat = ns.GetCategory(key)
   if not (cat and cat.enabled) then return end
   local s = ns.db.categories[key]
+  if not s then return end
   applyGroup(cat.title, s.titleSize, s, restore)
   applyGroup(cat.body, s.bodySize, s, restore)
+end
+
+-- 分類自己的觸發點：遊戲事件（對話框打開、換區域）與遊戲函式（聊天字級設定）之後重新套用
+local function hookCategories()
+  local f = CreateFrame("Frame")
+  local byEvent = {}
+  for _, c in ipairs(ns.CATEGORIES) do
+    for _, e in ipairs(c.events or {}) do
+      byEvent[e] = byEvent[e] or {}
+      table.insert(byEvent[e], c.key)
+      f:RegisterEvent(e)
+    end
+    for _, fn in ipairs(c.hooks or {}) do
+      if hooksecurefunc and type(_G[fn]) == "function" then
+        hooksecurefunc(fn, function(...)
+          -- 遊戲剛改了某個物件的字級（例：聊天視窗）：那就是新的「遊戲原始字級」，恢復預設要回到它
+          -- 使用者 2026-11-09 實測：原本拿「目前字級」當原始值，放大過後恢復預設回不去
+          for i = 1, select("#", ...) do
+            local obj = select(i, ...)
+            if type(obj) == "table" and originals[obj] and obj.GetFont then
+              local ok, _, size = pcall(obj.GetFont, obj)
+              if ok and size then originals[obj].size = size end
+            end
+          end
+          pcall(ns.ApplyCategory, c.key)
+        end)
+      end
+    end
+  end
+  f:SetScript("OnEvent", function(_, e)
+    -- 換區域、開對話框很頻繁：出錯不能每次都跳錯誤視窗
+    for _, key in ipairs(byEvent[e] or {}) do pcall(ns.ApplyCategory, key) end
+  end)
+end
+
+-- 小地圖旁官方「插件收納」按鈕（Addon Compartment；TOC 的 AddonCompartmentFunc* 指名這三個全域函式）
+function BigFontTuner_OnAddonCompartmentClick() ns.OpenSettings() end
+function BigFontTuner_OnAddonCompartmentEnter(_, button)
+  if not GameTooltip then return end
+  GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("BigFontTuner")
+  GameTooltip:AddLine(ns.L.COMPARTMENT_HINT, 0.8, 0.8, 0.8, true)
+  GameTooltip:Show()
+end
+function BigFontTuner_OnAddonCompartmentLeave()
+  if GameTooltip then GameTooltip:Hide() end
 end
 
 function ns.ApplyAll()
@@ -182,7 +279,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     initDB()
   elseif event == "PLAYER_LOGIN" then
     -- 每一步各自 pcall：任何一步出錯都不影響其他步驟（尤其是指令註冊）
-    for _, step in ipairs({ registerShortSlash, dropMissingFonts, ns.ApplyAll, ns.CreateSettings }) do
+    for _, step in ipairs({ registerShortSlash, dropMissingFonts, hookCategories, ns.ApplyAll, ns.CreateSettings }) do
       local ok, err = pcall(step)
       if not ok and geterrorhandler then geterrorhandler()(err) end
     end

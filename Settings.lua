@@ -42,6 +42,11 @@ local function makeSlider(parent, label, y, onChange)
     if not self.silent then onChange(v) end
   end)
 
+  -- 沒有標題組的分類（聊天）整列隱藏：標籤、滑桿、數值一起
+  function s:SetRowShown(show)
+    for _, o in ipairs({ text, self, value }) do if show then o:Show() else o:Hide() end end
+  end
+
   -- 程式設定數值時不觸發 onChange（避免切換分類時把值寫回設定）
   function s:SetSilently(v)
     self.silent = true
@@ -68,7 +73,9 @@ end
 local function refreshAll()
   if not cur() then return end
   for _, w in ipairs(instances) do
-    w.title:SetSilently(ns.GetGroupSize(selected, "title"))
+    local hasTitle = ns.GetCategory(selected).title ~= nil
+    w.title:SetRowShown(hasTitle)
+    if hasTitle then w.title:SetSilently(ns.GetGroupSize(selected, "title")) end
     w.body:SetSilently(ns.GetGroupSize(selected, "body"))
     w.font:GenerateMenu()
     w.outline:GenerateMenu()

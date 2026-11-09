@@ -187,4 +187,87 @@ for _, s in ipairs(printed) do if s:find("/bigfonttuner", 1, true) then found = 
 check(found, "/bft 被佔用時提示改用 /bigfonttuner")
 print = function() end
 
+-- 10. 使用者 2026-11-09：預留的聊天、對話、地圖三個分類都做（不探測，用常見名稱；找不到的物件略過）
+local function fsObj(name, size) local f = fontObj(name, "Fonts\\bKAI00M.TTF", size); f.GetObjectType = function() return "FontString" end; return f end
+local hooked = {}
+function hooksecurefunc(a, b, c) if type(a) == "string" then hooked[a] = b else hooked[b] = c end end
+local function setupWorld()
+  ChatFontNormal = fontObj("ChatFontNormal", "Fonts\\bKAI00M.TTF", 14)
+  ChatFrame1 = fontObj("ChatFrame1", "Fonts\\bKAI00M.TTF", 14)
+  ChatFrame2 = fontObj("ChatFrame2", "Fonts\\bKAI00M.TTF", 12)
+  NUM_CHAT_WINDOWS = 2
+  FCF_SetChatWindowFontSize = function() end -- 遊戲的聊天字級設定（存在才掛 hook）
+  GossipFrameNpcNameText = fsObj("GossipFrameNpcNameText", 16)
+  GossipGreetingText = fsObj("GossipGreetingText", 14)
+  local opt = fsObj("opt1", 12)
+  GossipTitleButton1 = { GetFontString = function() return opt end }
+  ZoneTextFont = fontObj("ZoneTextFont", "Fonts\\bKAI00M.TTF", 30)
+  SubZoneTextFont = fontObj("SubZoneTextFont", "Fonts\\bKAI00M.TTF", 24)
+  MinimapZoneText = fsObj("MinimapZoneText", 12)
+  return opt
+end
+local opt = setupWorld()
+LOCALE = "zhTW"; ns = boot(nil, false); login()
+for _, k in ipairs({ "chat", "gossip", "map" }) do
+  local c = ns.GetCategory(k)
+  check(c and c.enabled, k .. " 分類已開放")
+  check(type(ns.db.categories[k]) == "table", k .. " 有設定檔")
+end
+check(ChatFrame1.size == 14 and GossipGreetingText.size == 14 and ZoneTextFont.size == 30, "預設不改三個分類的字")
+check(ns.GetCategory("chat").title == nil, "聊天沒有標題組（設定頁只顯示內文字級）")
+
+-- 聊天：字級交給遊戲時只換字型與描邊；遊戲改聊天字級後仍保留字型
+local c = ns.db.categories.chat
+c.font = "hei"; c.outline = "OUTLINE"; ns.ApplyCategory("chat")
+check(ChatFrame1.file == "Fonts\\bHEI00M.TTF" and ChatFrame2.file == "Fonts\\bHEI00M.TTF" and ChatFontNormal.flags == "OUTLINE", "聊天每個視窗與 ChatFontNormal 換字型與描邊")
+check(ChatFrame1.size == 14 and ChatFrame2.size == 12, "聊天沒設字級時維持各視窗原本字級")
+ChatFrame2.size = 18 -- 玩家用遊戲選單把第二個視窗改成 18（遊戲函式簽名 FCF_SetChatWindowFontSize(self, chatFrame, fontSize)）
+check(hooked.FCF_SetChatWindowFontSize ~= nil, "掛上遊戲的聊天字級設定")
+hooked.FCF_SetChatWindowFontSize(nil, ChatFrame2, 18)
+check(ChatFrame2.size == 18 and ChatFrame2.file == "Fonts\\bHEI00M.TTF", "遊戲改聊天字級後保留新字級、重新套字型（得到 " .. ChatFrame2.size .. "）")
+c.bodySize = 20; ns.ApplyCategory("chat", true)
+check(ChatFrame1.size == 20, "聊天設了字級就套用（20）")
+ns.ResetCategory("chat")
+check(ChatFrame1.file == "Fonts\\bKAI00M.TTF" and ChatFrame1.flags == "", "聊天恢復預設回到原始字型")
+-- 使用者 2026-11-09 實測：聊天設過字級後「恢復預設」字級回不去
+check(ChatFrame1.size == 14 and ChatFrame2.size == 18, "聊天恢復預設回到遊戲設定的字級 14／18（得到 " .. ChatFrame1.size .. "／" .. ChatFrame2.size .. "）")
+c = ns.db.categories.chat
+c.bodySize = 22; ns.ApplyCategory("chat", true)
+ChatFrame2.size = 16; hooked.FCF_SetChatWindowFontSize(nil, ChatFrame2, 16) -- 設了字級之後，玩家又用遊戲選單把第二個視窗改成 16
+check(ChatFrame1.size == 22, "設了字級時遊戲改字級後仍套用設定（22）")
+c.bodySize = nil; ns.ApplyCategory("chat", true) -- 把字級改回「跟遊戲」
+check(ChatFrame1.size == 14 and ChatFrame2.size == 16, "字級改回不設時回到遊戲的字級 14／16（得到 " .. ChatFrame1.size .. "／" .. ChatFrame2.size .. "）")
+ns.ResetCategory("chat")
+
+-- 對話：NPC 名稱是標題組；問候語與選項是內文組（選項按鈕取它的文字）
+local g = ns.db.categories.gossip
+g.bodySize = 21; g.titleSize = 20; ns.ApplyCategory("gossip")
+check(GossipGreetingText.size == 21, "對話內文 21")
+check(opt.size == 18, "對話選項依比例 12*21/14=18（得到 " .. opt.size .. "）")
+check(GossipFrameNpcNameText.size == 20, "對話 NPC 名稱 20")
+GossipGreetingText.size = 14; opt.size = 12 -- 對話框重開，遊戲把字型設回原樣
+fire("GOSSIP_SHOW")
+check(GossipGreetingText.size == 21, "對話框每次打開都重新套用")
+check(QuestFont.size == 14, "對話不影響任務字型")
+
+-- 地圖：區域名稱跳字是標題組；小地圖區域名稱是內文組
+local m = ns.db.categories.map
+m.titleSize = 36; m.bodySize = 15; ns.ApplyCategory("map")
+check(ZoneTextFont.size == 36 and SubZoneTextFont.size == 29, "區域名稱 36，副區域依比例 24*36/30=29（得到 " .. SubZoneTextFont.size .. "）")
+check(MinimapZoneText.size == 15, "小地圖區域名稱 15")
+
+-- 客戶端沒有的物件直接略過，不報錯
+ChatFrame2 = nil; GossipTitleButton1 = nil; ZoneTextFont = nil
+local okMissing = pcall(function() for _, k in ipairs({ "chat", "gossip", "map" }) do ns.ApplyCategory(k, true) end end)
+check(okMissing, "找不到的字型物件略過不報錯")
+
+-- 小地圖旁插件收納按鈕
+local toc = io.open(DIR .. "/BigFontTuner.toc"):read("a")
+check(toc:find("## AddonCompartmentFunc: BigFontTuner_OnAddonCompartmentClick", 1, true) ~= nil, "TOC 指定收納按鈕點擊函式")
+check(type(BigFontTuner_OnAddonCompartmentClick) == "function" and type(BigFontTuner_OnAddonCompartmentEnter) == "function"
+  and type(BigFontTuner_OnAddonCompartmentLeave) == "function", "收納按鈕三個全域函式存在")
+window = nil
+BigFontTuner_OnAddonCompartmentClick()
+check(window and window.shown == true, "點收納按鈕開設定")
+
 os.exit(FAILED and 1 or 0)

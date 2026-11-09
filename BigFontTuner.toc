@@ -1,11 +1,14 @@
 ## Interface: 16001
 ## Title: BigFontTuner
-## Notes: Adjust text size, font and outline with a live preview (quest window first)
-## Notes-zhTW: 調整遊戲文字的大小、字型與描邊，附即時預覽（第一版：任務視窗）
-## Version: 0.2.1
+## Notes: Adjust text size, font and outline with a live preview (quest, chat, gossip, map). Support: support@augustusw.com
+## Notes-zhTW: 調整遊戲文字的大小、字型與描邊，附即時預覽（任務、聊天、對話、地圖）。問題回報：support@augustusw.com
+## Version: 0.3.0
 ## Author: AugustusW
 ## X-Email: support@augustusw.com
 ## IconTexture: Interface\AddOns\BigFontTuner\Media\icon
+## AddonCompartmentFunc: BigFontTuner_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: BigFontTuner_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: BigFontTuner_OnAddonCompartmentLeave
 ## SavedVariables: BigFontTunerDB
 ## Category: Interface
 ## Category-zhTW: 介面
