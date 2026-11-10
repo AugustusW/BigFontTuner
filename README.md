@@ -26,6 +26,8 @@ If this addon helps you, a star on the repo helps other players find it. 覺得�
 
 support@augustusw.com
 
+遇到問題時輸入 `/bft errors`，按「全選」後用 Ctrl+C 複製，把內容一起寄來會比較好查。紀錄只存在本機（最近 20 種錯誤，不含角色與帳號名稱），插件不會連網。
+
 ## 安裝
 
 從 [CurseForge](https://www.curseforge.com/wow/addons/bigfonttuner) 下載（CurseForge App 可自動更新），或直接從這個 repo 取得原始碼。
@@ -55,6 +57,7 @@ addon 啟動時會逐一檢查字型檔，載入失敗的不會出現在選單�
 
 | 檔案 | 內容 |
 |---|---|
+| `ErrorLog.lua` | 錯誤紀錄：接在遊戲的錯誤處理後面，只留本插件的錯誤（`/bft errors`） |
 | `Locale.lua` | 介面文字（enUS、zhTW），其他語系退回英文 |
 | `Fonts.lua` | 候選字型清單與存在檢查（用 pcall 包 SetFont，檔案不存在時 SetFont 會報錯） |
 | `Core.lua` | 分類定義、設定儲存（`BigFontTunerDB`）、套用字型、斜線指令 |

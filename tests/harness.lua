@@ -1,6 +1,8 @@
 -- 用假的 WoW API 跑 BigFontTuner 的載入流程（只驗邏輯，不驗畫面）
 -- 用法：lua tests/harness.lua <addon 資料夾>
 local DIR = arg[1] or "."
+unpack = unpack or table.unpack -- 遊戲是 Lua 5.1；測試可能跑在較新的 lua
+date, time = date or os.date, time or os.time
 local EXISTING = { ["fonts\\bkai00m.ttf"] = true, ["fonts\\bhei00m.ttf"] = true }
 
 -- 萬用假物件：任何方法呼叫都回傳自己，可以接住 UI 鏈式呼叫
@@ -49,6 +51,7 @@ function CreateFrame(kind, name, parent)
     rawset(f, "Hide", function(self) rawset(self, "shown", false) end)
     rawset(f, "IsShown", function(self) return rawget(self, "shown") end)
   end
+  if name == "BigFontTunerErrorLogFrame" then rawset(f, "TitleText", stub("TitleText")) end
   if kind == "Frame" and not parent then table.insert(frames, f) end
   f.RegisterEvent = function(self, ev) local e = rawget(self, "events") or {}; rawset(self, "events", e); e[ev] = true; return self end
   return f
@@ -66,11 +69,13 @@ C_AddOns = { GetAddOnMetadata = function() return "0.2.0" end }
 local optionsPage
 OPEN_WORKS = false -- 模擬永恆：OpenToCategory 沒反應
 Settings = {
-  RegisterCanvasLayoutCategory = function(page) optionsPage = page; return stub("category") end,
+  -- 遊戲實測（2026-11-10）：頁面第一次被開啟前還沒掛進選項面板，沒有 parent，IsVisible() 回 true
+  RegisterCanvasLayoutCategory = function(page) optionsPage = page; rawset(page, "visible", true); return stub("category") end,
   RegisterAddOnCategory = function() end,
-  OpenToCategory = function(id) opened = id; if OPEN_WORKS and optionsPage then rawset(optionsPage, "visible", true) end end,
+  OpenToCategory = function(id) opened = id; if OPEN_WORKS and optionsPage then rawset(optionsPage, "visible", true); rawset(SettingsPanel, "visible", true) end end,
 }
 SettingsPanel = stub("SettingsPanel")
+rawset(SettingsPanel, "Show", function(self) if OPEN_WORKS then rawset(self, "visible", true) end end) -- 模擬永恆：跳轉沒反應時面板不會開
 function HideUIPanel(f) rawset(f, "visible", false); if optionsPage then rawset(optionsPage, "visible", false) end end
 function ReloadUI() end
 
@@ -79,13 +84,14 @@ local function check(c, msg) realPrint((c and "PASS " or "FAIL ") .. msg) if not
 
 local function boot(db, otherSlash)
   frames, opened, inCombat, window, optionsPage = {}, nil, false, nil, nil
+  rawset(SettingsPanel, "visible", false)
   resetGlobals()
   for k in pairs(_G) do if type(k) == "string" and k:sub(1, 6) == "SLASH_" then _G[k] = nil end end
   if otherSlash then SLASH_OTHER1 = "/bft" end
   SlashCmdList = {}
   BigFontTunerDB = db
   local ns = {}
-  for _, f in ipairs({ "Locale.lua", "Fonts.lua", "Core.lua", "Settings.lua" }) do
+  for _, f in ipairs({ "ErrorLog.lua", "Locale.lua", "Fonts.lua", "Core.lua", "Settings.lua" }) do
     assert(loadfile(DIR .. "/" .. f))("BigFontTuner", ns)
   end
   return ns
@@ -269,5 +275,54 @@ check(type(BigFontTuner_OnAddonCompartmentClick) == "function" and type(BigFontT
 window = nil
 BigFontTuner_OnAddonCompartmentClick()
 check(window and window.shown == true, "點收納按鈕開設定")
+
+-- 錯誤紀錄：鏈接原處理器、只收自己的錯誤、errors 子指令、靜默失敗要留紀錄
+do
+  local prevCalls, popup = {}, nil
+  local h = function(e) prevCalls[#prevCalls + 1] = e end
+  geterrorhandler = function() return h end
+  seterrorhandler = function(f) h = f end
+  debugstack = function() return "" end
+  GetBuildInfo = function() return "1.60.1", "70862", "x", 16001 end
+  StaticPopupDialogs = {}
+  StaticPopup_Show = function(k) popup = k end
+  LOCALE = "zhTW"; ns = boot(nil, false); login()
+  local OWN = "Interface/AddOns/BigFontTuner/Core.lua:1: boom"
+  h(OWN)
+  check(prevCalls[1] == OWN, "自己的錯誤也交給原處理器")
+  check(#ns.ErrorLog.entries() == 1 and BigFontTunerDB.errors[1].msg == OWN, "自己的錯誤寫進存檔")
+  h("Interface/AddOns/Other/x.lua:1: y")
+  check(#ns.ErrorLog.entries() == 1, "別的插件的錯誤不記錄")
+  check(ns.ErrorLog.report():find("BigFontTuner 0.2.0 | Forever 1.60.1.70862 | zhTW", 1, true) ~= nil, "回報文字帶版本與語系")
+  window = nil
+  SlashCmdList.BIGFONTTUNER("errors")
+  check(window == nil, "/bft errors 不開設定")
+  SlashCmdList.BIGFONTTUNER("")
+  check(window and window.shown == true, "/bft 不帶參數照舊開設定")
+  check(SLASH_BFTERRORS1 == "/bfterrors", "備用指令已註冊")
+  SlashCmdList.BIGFONTTUNER("errors clear")
+  check(popup ~= nil and #ns.ErrorLog.entries() == 1, "清除要先確認")
+  StaticPopupDialogs[popup].OnAccept()
+  check(#ns.ErrorLog.entries() == 0 and #BigFontTunerDB.errors == 0, "確認後清空存檔")
+  local toc2 = {}
+  for line in io.lines(DIR .. "/BigFontTuner.toc") do if line ~= "" and not line:match("^#") then toc2[#toc2 + 1] = line end end
+  check(toc2[1]:gsub("\r", "") == "ErrorLog.lua", "TOC 第一個載入 ErrorLog.lua")
+  -- 事件／hook 觸發的套用失敗：不跳視窗，但要留紀錄（原本是 pcall 吞掉）
+  local calls = #prevCalls
+  ns.ApplyCategory = function() error("apply failed", 0) end
+  local okHook = pcall(hooked.FCF_SetChatWindowFontSize)
+  check(okHook and ns.ErrorLog.entries()[1] and ns.ErrorLog.entries()[1].msg == "apply failed", "hook 的套用失敗寫進紀錄")
+  check(#prevCalls == calls, "套用失敗不跳錯誤視窗")
+  ns.ErrorLog.clear()
+  fire("GOSSIP_SHOW")
+  check(ns.ErrorLog.entries()[1] and ns.ErrorLog.entries()[1].msg == "apply failed", "事件的套用失敗寫進紀錄")
+  ns.ErrorLog.clear()
+  local register = Settings.RegisterCanvasLayoutCategory
+  Settings.RegisterCanvasLayoutCategory = function() error("settings failed", 0) end
+  local okSettings = pcall(ns.CreateSettings)
+  Settings.RegisterCanvasLayoutCategory = register
+  check(okSettings and ns.ErrorLog.entries()[1] and ns.ErrorLog.entries()[1].msg == "settings failed", "選項頁註冊失敗寫進紀錄")
+  geterrorhandler, seterrorhandler, debugstack = nil, nil, nil
+end
 
 os.exit(FAILED and 1 or 0)

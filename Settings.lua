@@ -258,8 +258,14 @@ end
 
 function ns.CreateSettings()
   if Settings and Settings.RegisterCanvasLayoutCategory then
-    pcall(registerOptionsPage)
+    (ns.ErrorLog and ns.ErrorLog.try or pcall)(registerOptionsPage)
   end
+end
+
+-- 頁面第一次被開啟前還沒掛進選項面板，沒有 parent 的 frame 的 IsVisible() 是 true，
+-- 所以只看 IsVisible 會以為設定已開著而什麼都不做（2026-11-10 遊戲內確認：沒開過選項頁時 /bft 沒反應）
+local function pageOpen()
+  return optionsPage and SettingsPanel and SettingsPanel:IsShown() and optionsPage:IsVisible()
 end
 
 -- 試著跳到選項 → 插件 → BigFontTuner。OpenToCategory(ID) 在永恆實測沒反應，所以依序試幾種寫法，
@@ -275,7 +281,7 @@ local function tryOpenOptionsPage()
   }
   for _, attempt in ipairs(attempts) do
     pcall(attempt)
-    if optionsPage:IsVisible() then return true end
+    if pageOpen() then return true end
   end
   if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
   return false
@@ -283,7 +289,7 @@ end
 
 -- /bft：優先開選項頁，跳不過去才開獨立視窗。戰鬥中選項面板有 taint 風險，直接用獨立視窗。
 function ns.OpenSettings()
-  if optionsPage and optionsPage:IsVisible() then
+  if pageOpen() then
     HideUIPanel(SettingsPanel)
     return
   end

@@ -32,6 +32,15 @@ local enUS = {
   BFT_TAKEN = "BigFontTuner: /bft is used by another addon, type /bigfonttuner instead.",
   COMPARTMENT_HINT = "Click to open the settings. Also /bigfonttuner or /bft.",
 
+  ERRORS_TITLE = "BigFontTuner: Error log",
+  ERRORS_HINT = "Click the text, press Ctrl+A then Ctrl+C to copy, and paste it when reporting a problem.",
+  ERRORS_EMPTY = "No errors recorded.",
+  ERRORS_SELECT_ALL = "Select all",
+  ERRORS_CLEAR = "Clear log",
+  ERRORS_CLEAR_CONFIRM = "Clear all error records?\nThis cannot be undone. Copy the log first if a problem needs reporting.",
+  ERRORS_CLEAR_OK = "Clear",
+  ERRORS_CANCEL = "Cancel",
+
   SAMPLE_TITLE = "A Journey Begins",
   SAMPLE_BODY = "Follow the mountain road west, turn left at the fork, and find the old hunter at the camp.",
   SAMPLE_HEADER = "Description",
@@ -67,6 +76,15 @@ local zhTW = {
   COMMANDS = "指令：%s",
   BFT_TAKEN = "BigFontTuner：/bft 已被其他插件使用，請改打 /bigfonttuner。",
   COMPARTMENT_HINT = "點擊開啟設定。也可以輸入 /bigfonttuner 或 /bft。",
+
+  ERRORS_TITLE = "BigFontTuner：錯誤紀錄",
+  ERRORS_HINT = "點一下文字，按 Ctrl+A 再按 Ctrl+C 複製，回報問題時貼上。",
+  ERRORS_EMPTY = "目前沒有錯誤紀錄。",
+  ERRORS_SELECT_ALL = "全選",
+  ERRORS_CLEAR = "清除紀錄",
+  ERRORS_CLEAR_CONFIRM = "確定要清除全部錯誤紀錄嗎？\n清除後無法復原，回報問題前請先複製。",
+  ERRORS_CLEAR_OK = "清除",
+  ERRORS_CANCEL = "取消",
 
   SAMPLE_TITLE = "旅途的起點",
   SAMPLE_BODY = "沿著山路往西走，在岔路口左轉，找到營地裡的老獵人。",

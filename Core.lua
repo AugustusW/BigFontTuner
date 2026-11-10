@@ -159,14 +159,14 @@ local function hookCategories()
               if ok and size then originals[obj].size = size end
             end
           end
-          pcall(ns.ApplyCategory, c.key)
+          (ns.ErrorLog and ns.ErrorLog.try or pcall)(ns.ApplyCategory, c.key)
         end)
       end
     end
   end
   f:SetScript("OnEvent", function(_, e)
     -- 換區域、開對話框很頻繁：出錯不能每次都跳錯誤視窗
-    for _, key in ipairs(byEvent[e] or {}) do pcall(ns.ApplyCategory, key) end
+    for _, key in ipairs(byEvent[e] or {}) do (ns.ErrorLog and ns.ErrorLog.try or pcall)(ns.ApplyCategory, key) end
   end)
 end
 
@@ -268,6 +268,12 @@ local function registerShortSlash()
   else
     SLASH_BIGFONTTUNER2 = "/bft"
   end
+end
+
+-- /bft errors test：放在 ErrorLog.lua 之外，因為堆疊過濾會排除 ErrorLog.lua 自身的行
+function ns.errorLogSelfTest()
+  C_Timer.After(0, function() error("BigFontTuner error log self test") end)
+  C_Timer.After(0.1, function() if Mixin then Mixin(nil, { a = 1 }) end end) -- 錯誤發生在內建函式，訊息不含路徑
 end
 
 local ev = CreateFrame("Frame")
