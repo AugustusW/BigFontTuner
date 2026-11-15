@@ -267,6 +267,106 @@ ChatFrame2 = nil; GossipTitleButton1 = nil; ZoneTextFont = nil
 local okMissing = pcall(function() for _, k in ipairs({ "chat", "gossip", "map" }) do ns.ApplyCategory(k, true) end end)
 check(okMissing, "找不到的字型物件略過不報錯")
 
+-- 11. 使用者 2026-11-15 選 D：背包分類＝物品數量數字（標題組）＋說明框文字（內文組）
+do
+  local function countFs(size) local f = fsObj("count", size); f.flags = "OUTLINE"; return f end
+  -- 舊式客戶端：全域名稱 ContainerFrame1Item1Count；新式客戶端：frame.Items[i].Count
+  local named = countFs(13)
+  ContainerFrame1 = {}
+  ContainerFrame1Item1 = { GetName = function() return "ContainerFrame1Item1" end }
+  ContainerFrame1Item1Count = named
+  local modern = countFs(13)
+  ContainerFrame2 = { Items = { { Count = modern } } }
+  NUM_CONTAINER_FRAMES, MAX_CONTAINER_ITEMS = 2, 1
+  -- 使用者 2026-11-15 截圖：永恆用「背包已合併」的單一背包；格子只能從 EnumerateValidItems 列出
+  local combined = countFs(13)
+  ContainerFrameCombinedBags = { EnumerateValidItems = function()
+    local done = false
+    return function() if done then return nil end done = true return 1, { Count = combined } end
+  end }
+  GameTooltipText = fontObj("GameTooltipText", "Fonts\\bKAI00M.TTF", 12)
+  GameTooltipHeaderText = fontObj("GameTooltipHeaderText", "Fonts\\bKAI00M.TTF", 14)
+  GameTooltipTextSmall = fontObj("GameTooltipTextSmall", "Fonts\\bKAI00M.TTF", 10)
+  ToggleAllBags = function() end
+  hooked = {}
+  LOCALE = "zhTW"; ns = boot(nil, false); login()
+  local bag = ns.GetCategory("bag")
+  check(bag and bag.enabled and type(ns.db.categories.bag) == "table", "背包分類已開放、有設定檔")
+  check(ns.Label(bag) == "背包", "背包分類名稱")
+  check(ns.GroupLabel(bag, "title") == "數量數字字級" and ns.GroupLabel(bag, "body") == "說明框文字字級", "背包的兩個滑桿用自己的名稱")
+  check(ns.GroupLabel(ns.GetCategory("quest"), "title") == "標題字級", "其他分類維持標題／內文字級")
+  check(named.size == 13 and GameTooltipText.size == 12 and named.flags == "OUTLINE", "預設不改背包數字與說明框")
+
+  local b = ns.db.categories.bag
+  b.titleSize = 18; ns.ApplyCategory("bag", true)
+  check(named.size == 18 and modern.size == 18, "數量數字 18（兩種客戶端寫法都找得到）")
+  check(combined.size == 18, "合併背包的數量數字 18（得到 " .. combined.size .. "）")
+  local preview = countFs(13); ns.previewCounts = { preview }
+  ns.ApplyCategory("bag", true)
+  check(preview.size == 18 and preview.flags == "OUTLINE", "設定頁預覽的數字跟著套用")
+  check(named.flags == "OUTLINE", "數量數字沒選描邊時保留遊戲原本的描邊（得到 '" .. tostring(named.flags) .. "'）")
+  check(GameTooltipText.size == 12, "只調數字時說明框不變")
+
+  b.bodySize = 15; ns.ApplyCategory("bag", true)
+  check(GameTooltipText.size == 15, "說明框文字 15")
+  check(GameTooltipHeaderText.size == 18 and GameTooltipTextSmall.size == 13, "說明框標題與小字依比例 18／13（得到 "
+    .. GameTooltipHeaderText.size .. "／" .. GameTooltipTextSmall.size .. "）")
+  check(QuestFont.size == 14, "背包不影響任務字型")
+
+  b.outline = "THICKOUTLINE"; ns.ApplyCategory("bag", true)
+  check(named.flags == "THICKOUTLINE", "選了粗描邊就套用到數字")
+  b.outline = ""
+
+  -- 背包格子在打開背包時才建立：開背包之後新出現的數字也要套用
+  local late = countFs(13)
+  ContainerFrame2.Items[2] = { Count = late }
+  check(hooked.ToggleAllBags ~= nil, "掛上開背包的遊戲函式")
+  hooked.ToggleAllBags()
+  check(late.size == 18, "開背包後新建立的格子也套用（得到 " .. late.size .. "）")
+  late.size = 13
+  fire("BAG_UPDATE_DELAYED")
+  check(late.size == 18, "背包內容變動後重新套用")
+
+  ns.ResetCategory("bag")
+  check(named.size == 13 and named.flags == "OUTLINE" and GameTooltipText.size == 12 and GameTooltipHeaderText.size == 14,
+    "背包恢復預設回到原始字級與描邊")
+
+  -- 審查回饋：背包內容一直變動，設定沒變就不要重設字型（SetFont 會讓共用字型的文字重新排版）
+  b = ns.db.categories.bag -- ResetCategory 換掉了設定表，要重新取
+  b.titleSize = 18; b.bodySize = 15; ns.ApplyCategory("bag", true)
+  local calls = 0
+  local realSet = named.SetFont
+  named.SetFont = function(...) calls = calls + 1; return realSet(...) end
+  local tipCalls = 0
+  local realTipSet = GameTooltipText.SetFont
+  GameTooltipText.SetFont = function(...) tipCalls = tipCalls + 1; return realTipSet(...) end
+  fire("BAG_UPDATE_DELAYED")
+  check(calls == 0 and tipCalls == 0, "字型已經是設定值時不重設（數字 " .. calls .. " 次、說明框 " .. tipCalls .. " 次）")
+  named.size = 13; fire("BAG_UPDATE_DELAYED")
+  check(calls == 1 and named.size == 18, "被遊戲改回去時才重設")
+  named.SetFont, GameTooltipText.SetFont = nil, nil
+  ns.ResetCategory("bag")
+
+  -- 審查回饋：比例基準固定用 NumberFontNormal，不隨「第一個找到的格子」變動
+  NumberFontNormal = fontObj("NumberFontNormal", "Fonts\\bKAI00M.TTF", 13)
+  ns = boot(nil, false); login()
+  local small = countFs(10)           -- 某個格子原本用比較小的數字
+  ContainerFrameCombinedBags, ContainerFrame2 = nil, nil -- 讓小字格子成為第一個找到的格子
+  ContainerFrame1Item1Count = small
+  local pv = countFs(13); ns.previewCounts = { pv }
+  ns.db.categories.bag.titleSize = 18; ns.ApplyCategory("bag", true)
+  check(pv.size == 18 and small.size == 14, "以 NumberFontNormal 13 為基準：預覽 18、小字 10*18/13=14（得到 "
+    .. pv.size .. "／" .. small.size .. "）")
+  check(ns.GetGroupSize("bag", "title") == 18, "滑桿顯示設定值")
+  ns.db.categories.bag.titleSize = nil
+  check(ns.GetGroupSize("bag", "title") == 13, "沒設字級時滑桿顯示 NumberFontNormal 的字級 13")
+  NumberFontNormal = nil
+
+  ContainerFrame1, ContainerFrame2, ContainerFrame1Item1, ContainerFrame1Item1Count = nil, nil, nil, nil
+  ContainerFrameCombinedBags = { EnumerateValidItems = function() error("not ready") end }
+  check(pcall(ns.ApplyCategory, "bag", true), "沒有背包框架時略過不報錯")
+end
+
 -- 小地圖旁插件收納按鈕
 local toc = io.open(DIR .. "/BigFontTuner.toc"):read("a")
 check(toc:find("## AddonCompartmentFunc: BigFontTuner_OnAddonCompartmentClick", 1, true) ~= nil, "TOC 指定收納按鈕點擊函式")

@@ -1,11 +1,12 @@
 # BigFontTuner
 
-Adjust the font size, typeface and outline of in-game text for **World of Warcraft: Forever** (Interface 16001), with a live preview. Categories: quest window, chat, NPC dialogue (gossip) and map (zone name pop-ups, minimap zone name, map labels).
+Adjust the font size, typeface and outline of in-game text for **World of Warcraft: Forever** (Interface 16001), with a live preview. Categories: quest window, chat, NPC dialogue (gossip), map (zone name pop-ups, minimap zone name, map labels) and bags (item stack counts, tooltip text).
 
 **Download:** [CurseForge](https://www.curseforge.com/wow/addons/bigfonttuner) (or grab the source from this repository).
 
 - `/bft` (or `/bigfonttuner` if `/bft` is taken by another addon), or the entry in the addon compartment next to the minimap, opens the settings.
 - Chat: if no size is set, each chat window keeps the size chosen in the game's own chat settings; only the typeface and outline change.
+- Bags: stack counts change only on bag slots (action bars are untouched) and keep their outline unless one is chosen; tooltip text changes every tooltip, not just items.
 - Default changes nothing; "reset" returns to the game's original fonts.
 - Smaller text in the same group (e.g. quest objectives) scales proportionally.
 - Settings are saved account-wide. MIT licensed.
@@ -20,7 +21,7 @@ If this addon helps you, a star on the repo helps other players find it. 覺得�
 
 ## 中文說明
 
-魔獸世界：永恆（Interface 16001）用的字體調整 addon。可以調整遊戲文字的字級、字型和描邊，並即時預覽效果。分類：任務視窗、聊天、NPC 對話、地圖（進入區域時跳出的區域名稱、小地圖區域名稱、地圖標籤）。
+魔獸世界：永恆（Interface 16001）用的字體調整 addon。可以調整遊戲文字的字級、字型和描邊，並即時預覽效果。分類：任務視窗、聊天、NPC 對話、地圖（進入區域時跳出的區域名稱、小地圖區域名稱、地圖標籤）、背包（物品數量數字、說明框文字）。
 
 ## 問題回報
 
@@ -40,6 +41,7 @@ support@augustusw.com
 
 - 輸入 `/bigfonttuner` 開啟設定。如果 `/bft` 沒被其他 addon 佔用，也可以用 `/bft`。也可以點小地圖旁插件收納按鈕裡的 BigFontTuner。
 - 聊天：沒設字級時，每個聊天視窗維持遊戲聊天設定裡的字級，只換字型與描邊；設了字級才會統一。
+- 背包：數量數字只改背包格子，快捷列的數字不變；描邊選「無」時保留遊戲原本的描邊。說明框文字會連同其他說明框（礦點、技能等）一起變大。
 - 設定放在「選項 → 插件 → BigFontTuner」。輸入指令會先嘗試跳到那一頁；跳不過去（或戰鬥中）時改開同樣內容的獨立視窗，可以拖曳，按 Esc 關閉。
 - 介面語言預設跟隨客戶端（只有繁中客戶端顯示中文，其他語系顯示英文），也可以在設定裡選「English／繁體中文」，切換後按「重新載入」套用。
 - 標題字級、內文字級、字型、描邊調整後都會立即套用，設定自動儲存，同帳號的角色共用。

@@ -28,6 +28,32 @@ local function gossipBody()
   return list
 end
 
+-- 背包格子的數量數字（使用者 2026-11-15 選 D）：直接改每個格子的 FontString，不改共用的 NumberFontNormal，
+-- 快捷列的數字就不會跟著變。格子在打開背包時才建立，所以每次套用時重新列出。
+-- 三種寫法都找：合併背包（永恆截圖是這種，EnumerateValidItems）、frame.Items、舊式全域名稱 ContainerFrameNItemMCount。
+-- 設定頁的預覽數字（ns.previewCounts）放在最後，背包還沒打開過時滑桿也有基準字級可以顯示。
+local function bagCounts()
+  local list, seen = {}, {}
+  local function add(button)
+    if type(button) ~= "table" then return end
+    local fs = button.Count
+    if not fs and button.GetName then fs = _G[(button:GetName() or "") .. "Count"] end
+    if type(fs) == "table" and not seen[fs] then seen[fs] = true; list[#list + 1] = fs end
+  end
+  local function scan(frame, name)
+    if type(frame) ~= "table" then return end
+    if type(frame.EnumerateValidItems) == "function" then
+      pcall(function() for _, b in frame:EnumerateValidItems() do add(b) end end)
+    end
+    if type(frame.Items) == "table" then for _, b in ipairs(frame.Items) do add(b) end end
+    if name then for j = 1, (MAX_CONTAINER_ITEMS or 36) do add(_G[name .. "Item" .. j]) end end
+  end
+  scan(_G.ContainerFrameCombinedBags)
+  for i = 1, (NUM_CONTAINER_FRAMES or 13) do scan(_G["ContainerFrame" .. i], "ContainerFrame" .. i) end
+  for _, fs in ipairs(ns.previewCounts or {}) do add({ Count = fs }) end
+  return list
+end
+
 ns.CATEGORIES = {
   {
     key = "quest", labelKey = "CATEGORY_QUEST", enabled = true,
@@ -51,7 +77,23 @@ ns.CATEGORIES = {
     body = { "MinimapZoneText", "WorldMapTextFont" },
     events = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" },
   },
+  {
+    -- 標題組＝格子上的數量數字；內文組＝滑過物品的說明框（共用字型物件，所有說明框一起變）
+    -- keepFlags：數字原本有描邊，描邊選「無」時保留遊戲原本的描邊，不然放大後數字糊在圖示上
+    key = "bag", labelKey = "CATEGORY_BAG", enabled = true, keepFlags = true,
+    titleLabelKey = "BAG_COUNT_SIZE", bodyLabelKey = "BAG_TOOLTIP_SIZE", noteKey = "BAG_NOTE",
+    title = bagCounts, titleBase = "NumberFontNormal",
+    body = { "GameTooltipText", "GameTooltipHeaderText", "GameTooltipTextSmall" },
+    events = { "BAG_UPDATE_DELAYED" },
+    hooks = { "ToggleAllBags", "OpenAllBags", "ToggleBag", "OpenBag", "ToggleBackpack", "OpenBackpack" },
+  },
 }
+
+-- 滑桿名稱：分類可以自訂（背包的兩組不是標題／內文）
+function ns.GroupLabel(cat, group)
+  local key = cat[group .. "LabelKey"] or (group == "title" and "TITLE_SIZE" or "BODY_SIZE")
+  return ns.L[key]
+end
 
 local DEFAULTS = { font = "default", outline = "" } -- titleSize／bodySize 預設為 nil
 
@@ -68,9 +110,9 @@ end
 -- 每個字型物件第一次被改之前的原始設定（檔案、大小、樣式），以物件為鍵
 local originals = {}
 
--- 名稱 → 有 GetFont／SetFont 的物件；按鈕取它的文字；找不到回 nil
+-- 名稱（或物件本身）→ 有 GetFont／SetFont 的物件；按鈕取它的文字；找不到回 nil
 local function resolve(name)
-  local obj = _G[name]
+  local obj = type(name) == "table" and name or _G[name]
   if type(obj) ~= "table" then return nil end
   if not obj.GetFont and obj.GetFontString then obj = obj:GetFontString() end
   if type(obj) == "table" and obj.GetFont and obj.SetFont then return obj end
@@ -97,24 +139,33 @@ local function members(group)
   return list
 end
 
+-- 比例縮放的基準：分類指定的字型物件（背包數字用 NumberFontNormal，不隨「第一個找到的格子」變動），
+-- 沒指定或客戶端沒有時用組內第一個物件
+local function baseOf(cat, group, objs)
+  local named = cat[group .. "Base"]
+  return (named and remember(resolve(named))) or remember(objs[1])
+end
+
 -- 某組目前的基準字級（設定值，或基準物件的原始字級），給滑桿顯示用
 function ns.GetGroupSize(categoryKey, group)
   local cat = ns.GetCategory(categoryKey)
   local s = ns.db.categories[categoryKey]
   local value = s[group .. "Size"]
   if value then return value end
-  local base = remember(members(cat[group])[1])
+  local base = baseOf(cat, group, members(cat[group]))
   return base and math.floor(base.size + 0.5) or 14
 end
 
 -- restore=true 時，全部是預設值的組會還原成原始設定；否則不碰（不覆蓋其他 addon 的字型）
-local function applyGroup(group, size, settings, restore)
+local function applyGroup(cat, groupKey, size, settings, restore)
+  local keepFlags = cat.keepFlags
+  local group = cat[groupKey]
   if not group then return end
   local font = settings.font ~= ns.FONT_DEFAULT and ns.FindFont(settings.font) or nil
   local untouched = not size and not font and settings.outline == ""
   if untouched and not restore then return end
   local objs = members(group)
-  local base = remember(objs[1])
+  local base = baseOf(cat, groupKey, objs)
   for _, obj in ipairs(objs) do
     local orig = untouched and originals[obj] or remember(obj)
     if orig then
@@ -122,7 +173,14 @@ local function applyGroup(group, size, settings, restore)
       if size and base and base.size > 0 then
         s = math.floor(orig.size * size / base.size + 0.5)
       end
-      pcall(obj.SetFont, obj, font and font.path or orig.file, s, untouched and orig.flags or settings.outline)
+      local flags = settings.outline
+      if untouched or (keepFlags and flags == "") then flags = orig.flags end
+      local file = font and font.path or orig.file
+      -- 已經是目標值就不重設：背包內容一直變動，SetFont 會讓共用這個字型的文字重新排版（審查回饋）
+      local ok, cf, cs, cfl = pcall(obj.GetFont, obj)
+      if not (ok and cf == file and cs == s and (cfl or "") == flags) then
+        pcall(obj.SetFont, obj, file, s, flags)
+      end
     end
   end
 end
@@ -133,8 +191,8 @@ function ns.ApplyCategory(key, restore)
   if not (cat and cat.enabled) then return end
   local s = ns.db.categories[key]
   if not s then return end
-  applyGroup(cat.title, s.titleSize, s, restore)
-  applyGroup(cat.body, s.bodySize, s, restore)
+  applyGroup(cat, "title", s.titleSize, s, restore)
+  applyGroup(cat, "body", s.bodySize, s, restore)
 end
 
 -- 分類自己的觸發點：遊戲事件（對話框打開、換區域）與遊戲函式（聊天字級設定）之後重新套用

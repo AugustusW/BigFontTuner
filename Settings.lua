@@ -42,6 +42,8 @@ local function makeSlider(parent, label, y, onChange)
     if not self.silent then onChange(v) end
   end)
 
+  function s:SetLabel(t) text:SetText(t) end
+
   -- 沒有標題組的分類（聊天）整列隱藏：標籤、滑桿、數值一起
   function s:SetRowShown(show)
     for _, o in ipairs({ text, self, value }) do if show then o:Show() else o:Hide() end end
@@ -73,13 +75,18 @@ end
 local function refreshAll()
   if not cur() then return end
   for _, w in ipairs(instances) do
-    local hasTitle = ns.GetCategory(selected).title ~= nil
+    local cat = ns.GetCategory(selected)
+    local hasTitle = cat.title ~= nil
+    w.title:SetLabel(ns.GroupLabel(cat, "title"))
+    w.body:SetLabel(ns.GroupLabel(cat, "body"))
     w.title:SetRowShown(hasTitle)
     if hasTitle then w.title:SetSilently(ns.GetGroupSize(selected, "title")) end
     w.body:SetSilently(ns.GetGroupSize(selected, "body"))
     w.font:GenerateMenu()
     w.outline:GenerateMenu()
     w.language:GenerateMenu()
+    w.showPreview(selected)
+    w.note:SetText(cat.noteKey and L[cat.noteKey] or "")
     for key, b in pairs(w.tabs) do
       if key == selected then b:LockHighlight() else b:UnlockHighlight() end
     end
@@ -190,8 +197,14 @@ local function buildContent(panel)
   bg:SetColorTexture(0.91, 0.84, 0.66, 1)
   box:SetClipsChildren(true) -- 字級調到很大時，文字不要溢出預覽框
 
+  -- 任務預覽（背包以外的分類共用）與背包預覽，切分類時切換
+  local questPreview = CreateFrame("Frame", nil, box)
+  questPreview:SetAllPoints()
+  local bagPreview = CreateFrame("Frame", nil, box)
+  bagPreview:SetAllPoints()
+
   local function line(fontObject, text, anchor, gap)
-    local fs = box:CreateFontString(nil, "ARTWORK")
+    local fs = questPreview:CreateFontString(nil, "ARTWORK")
     fs:SetFontObject(fontObject)
     fs:SetTextColor(0.16, 0.10, 0.03)
     fs:SetJustifyH("LEFT")
@@ -205,12 +218,82 @@ local function buildContent(panel)
   local p3 = line(QuestTitleFont, L.SAMPLE_HEADER, p2, 10)
   line(QuestFont, L.SAMPLE_BODY2, p3, 6)
 
+  -- 背包預覽：深色底蓋住羊皮紙；格子數字登記到 ns.previewCounts，跟背包格子一起套用
+  local dark = bagPreview:CreateTexture(nil, "BORDER")
+  dark:SetAllPoints(bg)
+  dark:SetColorTexture(0.06, 0.06, 0.06, 1)
+  local bagFrame = CreateFrame("Frame", nil, bagPreview)
+  bagFrame:SetPoint("TOPLEFT", 12, -12)
+  bagFrame:SetSize(182, 72)
+  local bagBg = bagFrame:CreateTexture(nil, "BACKGROUND")
+  bagBg:SetAllPoints()
+  bagBg:SetColorTexture(0.12, 0.10, 0.08, 1)
+  local bagTitle = bagFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  bagTitle:SetPoint("TOPLEFT", 6, -5)
+  bagTitle:SetText(L.SAMPLE_BAG)
+  local slots = {
+    { "Interface\\Icons\\INV_Ore_Copper_01", "20" },
+    { "Interface\\Icons\\INV_Misc_Flower_02", "5" },
+    { "Interface\\Icons\\INV_Potion_51", "12" },
+    { "Interface\\Icons\\INV_Misc_Food_15" },
+  }
+  ns.previewCounts = ns.previewCounts or {}
+  for i, info in ipairs(slots) do
+    local icon = bagFrame:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(38, 38)
+    icon:SetPoint("TOPLEFT", 6 + (i - 1) * 43, -24)
+    icon:SetTexture(info[1])
+    if info[2] then
+      local count = bagFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+      count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 2)
+      count:SetText(info[2])
+      table.insert(ns.previewCounts, count)
+    end
+  end
+
+  local tip = CreateFrame("Frame", nil, bagPreview, "BackdropTemplate")
+  tip:SetPoint("TOPLEFT", bagFrame, "BOTTOMLEFT", 40, -14)
+  tip:SetSize(236, 140)
+  tip:SetBackdrop({
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 },
+  })
+  local tipBg = tip:CreateTexture(nil, "BACKGROUND")
+  tipBg:SetPoint("TOPLEFT", 3, -3)
+  tipBg:SetPoint("BOTTOMRIGHT", -3, 3)
+  tipBg:SetColorTexture(0.03, 0.03, 0.12, 0.95)
+  local function tipLine(fontObject, text, color, anchor)
+    local fs = tip:CreateFontString(nil, "ARTWORK")
+    fs:SetFontObject(fontObject)
+    fs:SetTextColor(color[1], color[2], color[3])
+    fs:SetJustifyH("LEFT")
+    fs:SetWidth(212)
+    if anchor then fs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -3) else fs:SetPoint("TOPLEFT", 10, -9) end
+    fs:SetText(text)
+    return fs
+  end
+  local t1 = tipLine(GameTooltipHeaderText, L.SAMPLE_ITEM, { 1, 1, 1 })
+  local t2 = tipLine(GameTooltipText, L.SAMPLE_ITEM_TYPE, { 1, 1, 1 }, t1)
+  tipLine(GameTooltipText, L.SAMPLE_ITEM_DESC, { 1, 0.82, 0 }, t2)
+
+  function w.showPreview(key)
+    if key == "bag" then questPreview:Hide(); bagPreview:Show() else bagPreview:Hide(); questPreview:Show() end
+  end
+
+  -- 分類說明（例：背包會連帶影響哪些地方）
+  w.note = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  w.note:SetPoint("TOPLEFT", box, "BOTTOMLEFT", 2, -6)
+  w.note:SetWidth(300)
+  w.note:SetJustifyH("LEFT")
+
   local hint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   hint:SetPoint("BOTTOMLEFT", 16, 14)
   hint:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
   hint:SetJustifyH("LEFT")
   hint:SetText(L.HINT .. "\n" .. L.COMMANDS:format("/bigfonttuner" .. (SLASH_BIGFONTTUNER2 and ", /bft" or "")))
 
+  -- 預覽數字是建立畫面時才有的，打開時套用一次背包設定（失敗只記錄，不擋設定頁）
+  panel:HookScript("OnShow", function() (ns.ErrorLog and ns.ErrorLog.try or pcall)(ns.ApplyCategory, "bag") end)
   panel:HookScript("OnShow", refreshAll)
   table.insert(instances, w)
   return w

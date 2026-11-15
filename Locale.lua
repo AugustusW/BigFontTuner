@@ -7,6 +7,7 @@ local enUS = {
   CATEGORY_CHAT = "Chat",
   CATEGORY_GOSSIP = "Gossip",
   CATEGORY_MAP = "Map",
+  CATEGORY_BAG = "Bags",
   COMING_LATER = "%s (later)",
 
   OUTLINE_NONE = "None",
@@ -22,6 +23,9 @@ local enUS = {
 
   TITLE_SIZE = "Title size",
   BODY_SIZE = "Body size",
+  BAG_COUNT_SIZE = "Stack count",
+  BAG_TOOLTIP_SIZE = "Tooltip text",
+  BAG_NOTE = "Stack counts change only in bags (not action bars); outline \"None\" keeps the game's outline. Tooltip text changes every tooltip.",
   FONT = "Font",
   OUTLINE = "Outline",
   RESET = "Reset category",
@@ -45,6 +49,10 @@ local enUS = {
   SAMPLE_BODY = "Follow the mountain road west, turn left at the fork, and find the old hunter at the camp.",
   SAMPLE_HEADER = "Description",
   SAMPLE_BODY2 = "Deliver this letter to him; he will tell you what to do next.",
+  SAMPLE_BAG = "Backpack",
+  SAMPLE_ITEM = "Copper Ore",
+  SAMPLE_ITEM_TYPE = "Trade Goods",
+  SAMPLE_ITEM_DESC = "Can be smelted into a copper bar.",
 }
 
 local zhTW = {
@@ -52,6 +60,7 @@ local zhTW = {
   CATEGORY_CHAT = "聊天",
   CATEGORY_GOSSIP = "對話",
   CATEGORY_MAP = "地圖",
+  CATEGORY_BAG = "背包",
   COMING_LATER = "%s（之後）",
 
   OUTLINE_NONE = "無",
@@ -67,6 +76,9 @@ local zhTW = {
 
   TITLE_SIZE = "標題字級",
   BODY_SIZE = "內文字級",
+  BAG_COUNT_SIZE = "數量數字字級",
+  BAG_TOOLTIP_SIZE = "說明框文字字級",
+  BAG_NOTE = "數量數字只改背包格子（快捷列不變），描邊選「無」時保留遊戲原本的描邊；說明框文字會連同其他說明框（礦點、技能等）一起變大。",
   FONT = "字型",
   OUTLINE = "描邊",
   RESET = "恢復此分類預設",
@@ -90,6 +102,10 @@ local zhTW = {
   SAMPLE_BODY = "沿著山路往西走，在岔路口左轉，找到營地裡的老獵人。",
   SAMPLE_HEADER = "描述",
   SAMPLE_BODY2 = "把這封信交給他，他會告訴你接下來該做什麼。",
+  SAMPLE_BAG = "行囊",
+  SAMPLE_ITEM = "銅礦石",
+  SAMPLE_ITEM_TYPE = "交易物品",
+  SAMPLE_ITEM_DESC = "可以熔煉成銅錠。",
 }
 
 enUS.LANGUAGE = "Language / 介面語言"
