@@ -59,14 +59,15 @@ local function makeSlider(parent, label, y, onChange)
   return s
 end
 
-local function makeDropdown(parent, label, y, buildItems)
+local function makeDropdown(parent, label, y, buildItems, x)
+  x = x or 16
   local text = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-  text:SetPoint("TOPLEFT", 16, y)
+  text:SetPoint("TOPLEFT", x, y)
   text:SetText(label)
 
   local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
   dd:SetWidth(180)
-  dd:SetPoint("TOPLEFT", 116, y + 6)
+  dd:SetPoint("TOPLEFT", x + 100, y + 6)
   dd:SetupMenu(function(_, root) buildItems(root) end)
   return dd
 end
@@ -85,6 +86,7 @@ local function refreshAll()
     w.font:GenerateMenu()
     w.outline:GenerateMenu()
     w.language:GenerateMenu()
+    w.global:GenerateMenu()
     w.showPreview(selected)
     w.note:SetText(cat.noteKey and L[cat.noteKey] or "")
     for key, b in pairs(w.tabs) do
@@ -109,6 +111,20 @@ local function buildContent(panel)
   ver:SetPoint("LEFT", title, "RIGHT", 8, 0)
   ver:SetText("v" .. (C_AddOns.GetAddOnMetadata(addonName, "Version") or "?"))
 
+  -- 全部介面字型（使用者 2026-11-15 選 A）：放在標題右邊，跟分類設定分開
+  w.global = makeDropdown(panel, L.GLOBAL_FONT, -16, function(root)
+    for _, f in ipairs(ns.GetAvailableFonts()) do
+      root:CreateRadio(f.key == ns.FONT_DEFAULT and L.FONT_GAME_DEFAULT or ns.FontLabel(f),
+        function() return ns.db.globalFont == f.key end,
+        function() ns.SetGlobalFont(f.key); refreshAll() end)
+    end
+  end, 300)
+  local gnote = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  gnote:SetPoint("TOPLEFT", 300, -38)
+  gnote:SetWidth(340)
+  gnote:SetJustifyH("LEFT")
+  gnote:SetText(L.GLOBAL_FONT_NOTE)
+
   -- 分類頁籤
   w.tabs = {}
   local prev
@@ -117,7 +133,7 @@ local function buildContent(panel)
     local label = ns.Label(c)
     b:SetSize(c.enabled and 80 or 110, 22)
     b:SetText(c.enabled and label or L.COMING_LATER:format(label))
-    if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 16, -46) end
+    if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 16, -64) end
     if c.enabled then
       b:SetScript("OnClick", function() selected = c.key; refreshAll() end)
     else
@@ -202,6 +218,8 @@ local function buildContent(panel)
   questPreview:SetAllPoints()
   local bagPreview = CreateFrame("Frame", nil, box)
   bagPreview:SetAllPoints()
+  local profPreview = CreateFrame("Frame", nil, box)
+  profPreview:SetAllPoints()
 
   local function line(fontObject, text, anchor, gap)
     local fs = questPreview:CreateFontString(nil, "ARTWORK")
@@ -276,8 +294,34 @@ local function buildContent(panel)
   local t2 = tipLine(GameTooltipText, L.SAMPLE_ITEM_TYPE, { 1, 1, 1 }, t1)
   tipLine(GameTooltipText, L.SAMPLE_ITEM_DESC, { 1, 0.82, 0 }, t2)
 
+  -- 專業預覽：深色底，上半仿右側配方資訊、下半仿左側清單；文字登記到 ns.previewProf，跟專業視窗一起套用
+  local profDark = profPreview:CreateTexture(nil, "BORDER")
+  profDark:SetAllPoints(bg)
+  profDark:SetColorTexture(0.09, 0.07, 0.05, 1)
+  ns.previewProf = ns.previewProf or { title = {}, body = {} }
+  local function profLine(group, fontObject, text, color, anchor, gap)
+    local fs = profPreview:CreateFontString(nil, "ARTWORK")
+    fs:SetFontObject(fontObject)
+    fs:SetTextColor(color[1], color[2], color[3])
+    fs:SetJustifyH("LEFT")
+    fs:SetWidth(272)
+    if anchor then fs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -gap) else fs:SetPoint("TOPLEFT", 14, -12) end
+    fs:SetText(text)
+    table.insert(ns.previewProf[group], fs)
+    return fs
+  end
+  local white, yellow, gray = { 1, 1, 1 }, { 1, 0.82, 0 }, { 0.6, 0.6, 0.6 }
+  local r1 = profLine("title", GameFontHighlightMed2 or GameFontHighlightLarge, L.SAMPLE_PROF_RECIPE, white)
+  local r2 = profLine("body", GameFontHighlightSmall2 or GameFontHighlightSmall, L.SAMPLE_PROF_DESC, white, r1, 6)
+  local r3 = profLine("body", GameFontHighlight_NoShadow or GameFontHighlight, L.SAMPLE_PROF_REAGENT, white, r2, 6)
+  local r4 = profLine("title", GameFontNormal_NoShadow or GameFontNormal, L.SAMPLE_PROF_CATEGORY, yellow, r3, 16)
+  local r5 = profLine("body", GameFontHighlight_NoShadow or GameFontHighlight, L.SAMPLE_PROF_ROW1, yellow, r4, 6)
+  profLine("body", GameFontHighlight_NoShadow or GameFontHighlight, L.SAMPLE_PROF_ROW2, gray, r5, 4)
+
   function w.showPreview(key)
-    if key == "bag" then questPreview:Hide(); bagPreview:Show() else bagPreview:Hide(); questPreview:Show() end
+    questPreview:SetShown(key ~= "bag" and key ~= "profession")
+    bagPreview:SetShown(key == "bag")
+    profPreview:SetShown(key == "profession")
   end
 
   -- 分類說明（例：背包會連帶影響哪些地方）

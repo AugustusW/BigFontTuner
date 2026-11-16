@@ -157,15 +157,22 @@ function ns.GetGroupSize(categoryKey, group)
 end
 
 -- restore=true 時，全部是預設值的組會還原成原始設定；否則不碰（不覆蓋其他 addon 的字型）
-local function applyGroup(cat, groupKey, size, settings, restore)
+-- only：只套用這幾個物件（例：專業清單捲動時新建立的列），不列出整組
+local function applyGroup(cat, groupKey, size, settings, restore, only)
   local keepFlags = cat.keepFlags
   local group = cat[groupKey]
   if not group then return end
-  local font = settings.font ~= ns.FONT_DEFAULT and ns.FindFont(settings.font) or nil
-  local untouched = not size and not font and settings.outline == ""
+  -- 分類自己選的字型優先，沒選就跟全部介面；只跟全部介面（explicit 為假）時字級與描邊都維持原樣
+  local catFont = settings.font ~= ns.FONT_DEFAULT and ns.FindFont(settings.font) or nil
+  local font = catFont or ns.GlobalFont()
+  local explicit = size or catFont or settings.outline ~= ""
+  local untouched = not explicit and not font
   if untouched and not restore then return end
-  local objs = members(group)
-  local base = baseOf(cat, groupKey, objs)
+  local objs = only or members(group)
+  -- only 時不列出整組（專業清單每建立一列都會走這裡）：有指定基準字型物件就用不到組員
+  local pool = objs
+  if only then pool = cat[groupKey .. "Base"] and {} or members(group) end
+  local base = baseOf(cat, groupKey, pool)
   for _, obj in ipairs(objs) do
     local orig = untouched and originals[obj] or remember(obj)
     if orig then
@@ -174,7 +181,7 @@ local function applyGroup(cat, groupKey, size, settings, restore)
         s = math.floor(orig.size * size / base.size + 0.5)
       end
       local flags = settings.outline
-      if untouched or (keepFlags and flags == "") then flags = orig.flags end
+      if not explicit or (keepFlags and flags == "") then flags = orig.flags end
       local file = font and font.path or orig.file
       -- 已經是目標值就不重設：背包內容一直變動，SetFont 會讓共用這個字型的文字重新排版（審查回饋）
       local ok, cf, cs, cfl = pcall(obj.GetFont, obj)
@@ -193,10 +200,57 @@ function ns.ApplyCategory(key, restore)
   if not s then return end
   applyGroup(cat, "title", s.titleSize, s, restore)
   applyGroup(cat, "body", s.bodySize, s, restore)
+  if cat.after then cat.after(s, restore) end
+end
+
+-- 只套用指定物件（全部是預設值時還原成原始設定，回收再用的物件才不會留著上次放大的字）
+function ns.ApplyObjects(key, groupKey, objs)
+  local cat = ns.GetCategory(key)
+  local s = cat and cat.enabled and ns.db.categories[key]
+  if not s then return end
+  local list = {}
+  for _, o in ipairs(objs) do
+    local obj = resolve(o)
+    if obj then list[#list + 1] = obj end
+  end
+  applyGroup(cat, groupKey, s[groupKey .. "Size"], s, true, list)
+end
+
+-- 原始字級 origSize 的文字在目前設定下會變成幾級（沒設字級＝不變）；給列高、文字框高度計算用
+function ns.ScaledSize(key, groupKey, origSize)
+  local cat = ns.GetCategory(key)
+  local size = cat and ns.db.categories[key] and ns.db.categories[key][groupKey .. "Size"]
+  if not size then return origSize end
+  -- 列高計算每一列都會呼叫：有指定基準字型物件就直接用，不列出整組
+  local named = cat[groupKey .. "Base"]
+  local base = (named and remember(resolve(named))) or baseOf(cat, groupKey, members(cat[groupKey]))
+  if not (base and base.size > 0) then return origSize end
+  return math.floor(origSize * size / base.size + 0.5)
+end
+
+-- 物件第一次被改之前的字級（還沒改過回 nil）
+function ns.OriginalSize(obj)
+  return originals[obj] and originals[obj].size
 end
 
 -- 分類自己的觸發點：遊戲事件（對話框打開、換區域）與遊戲函式（聊天字級設定）之後重新套用
+-- 隨需載入的暴雪介面（例：專業視窗 Blizzard_Professions，第一次打開才載入）：載入後才掛 hook，每個分類只掛一次
+local function setupLoaded(name)
+  for _, c in ipairs(ns.CATEGORIES) do
+    if c.enabled and c.loadOn and c.setup and not c.isSetUp then
+      local loaded = c.loadOn == name
+      if not name and C_AddOns and C_AddOns.IsAddOnLoaded then loaded = C_AddOns.IsAddOnLoaded(c.loadOn) end
+      if loaded then
+        c.isSetUp = true
+        c.setup()
+        ns.ApplyCategory(c.key)
+      end
+    end
+  end
+end
+
 local function hookCategories()
+  setupLoaded()
   local f = CreateFrame("Frame")
   local byEvent = {}
   for _, c in ipairs(ns.CATEGORIES) do
@@ -242,7 +296,51 @@ function BigFontTuner_OnAddonCompartmentLeave()
   if GameTooltip then GameTooltip:Hide() end
 end
 
+-- 全部介面字型（使用者 2026-11-15 選 A）：遊戲所有共用字型物件（GetFonts）只換字型檔，字級與描邊沿用目前的值。
+-- 分類在它之後套用，所以分類另外選的字型會蓋在上面；不是字型物件的文字（聊天視窗、對話框、背包數字）由各分類跟著全部介面套用。
+function ns.GlobalFont()
+  local key = ns.db and ns.db.globalFont
+  if not key or key == ns.FONT_DEFAULT then return nil end
+  return ns.FindFont(key)
+end
+
+local function globalObjects()
+  if type(GetFonts) ~= "function" then return {} end
+  local ok, list = pcall(GetFonts)
+  if not ok or type(list) ~= "table" then return {} end
+  return members(list)
+end
+
+function ns.ApplyGlobal(restore)
+  local font = ns.GlobalFont()
+  if not font and not restore then return end
+  for _, obj in ipairs(globalObjects()) do
+    local orig = font and remember(obj) or originals[obj]
+    if orig then
+      local ok, cf, cs, cfl = pcall(obj.GetFont, obj)
+      local file = font and font.path or orig.file
+      if ok and cs and cf ~= file then pcall(obj.SetFont, obj, file, cs, cfl or "") end
+    end
+  end
+end
+
+-- 頭上的名字、名條、戰鬥數字不是字型物件：遊戲進入世界前讀這幾個全域變數決定字型（使用者 2026-11-15 截圖：角色名字沒變）。
+-- 只能在插件載入時改，之後換全部介面字型要 /reload 才會反映；沒設全部介面時完全不碰（reload 後遊戲自己會設回原值）。
+local ENGINE_FONT_VARS = { "UNIT_NAME_FONT", "NAMEPLATE_FONT", "DAMAGE_TEXT_FONT", "STANDARD_TEXT_FONT" }
+local function applyEngineFonts()
+  local font = ns.GlobalFont()
+  if not font then return end
+  for _, v in ipairs(ENGINE_FONT_VARS) do _G[v] = font.path end
+end
+
+function ns.SetGlobalFont(key)
+  ns.db.globalFont = key
+  ns.ApplyGlobal(true)
+  for _, c in ipairs(ns.CATEGORIES) do ns.ApplyCategory(c.key, true) end
+end
+
 function ns.ApplyAll()
+  ns.ApplyGlobal()
   for _, c in ipairs(ns.CATEGORIES) do
     ns.ApplyCategory(c.key)
   end
@@ -280,6 +378,7 @@ local function initDB()
   local db = BigFontTunerDB
   db.version = 1
   if not (db.locale == "auto" or ns.LOCALES[db.locale]) then db.locale = "auto" end
+  if type(db.globalFont) ~= "string" then db.globalFont = ns.FONT_DEFAULT end
   if type(db.categories) ~= "table" then db.categories = {} end
   for _, c in ipairs(ns.CATEGORIES) do
     if c.enabled then
@@ -296,6 +395,7 @@ end
 
 -- 字型要等字型清單驗證過才知道存不存在：找不到的字型改回遊戲預設，下拉選單才有選中項
 local function dropMissingFonts()
+  if ns.db.globalFont ~= ns.FONT_DEFAULT and not ns.FindFont(ns.db.globalFont) then ns.db.globalFont = ns.FONT_DEFAULT end
   for key, s in pairs(ns.db.categories) do
     if ns.GetCategory(key) and s.font ~= ns.FONT_DEFAULT and not ns.FindFont(s.font) then
       s.font = ns.FONT_DEFAULT
@@ -341,6 +441,10 @@ ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == addonName then
     initDB()
+    local ok, err = pcall(applyEngineFonts)
+    if not ok and geterrorhandler then geterrorhandler()(err) end
+  elseif event == "ADDON_LOADED" then
+    if ns.db then (ns.ErrorLog and ns.ErrorLog.try or pcall)(setupLoaded, arg1) end
   elseif event == "PLAYER_LOGIN" then
     -- 每一步各自 pcall：任何一步出錯都不影響其他步驟（尤其是指令註冊）
     for _, step in ipairs({ registerShortSlash, dropMissingFonts, hookCategories, ns.ApplyAll, ns.CreateSettings }) do

@@ -14,6 +14,11 @@ ns.FONT_CANDIDATES = {
   { key = "heib", labelKey = "FONT_HEI_BOLD", path = "Fonts\\bHEI01B.TTF" },
   { key = "lei", labelKey = "FONT_LEI", path = "Fonts\\bLEI00D.TTF" },
   { key = "arkai", labelKey = "FONT_ARKAI", path = "Fonts\\ARKai_T.TTF" },
+  -- 開源字型（OFL 1.1）。上架版不附（使用者 2026-11-15：檔案太大），自用版用 FONTS_DIR 打包進 Fonts/；
+  -- 沒有檔案時驗證不過、不會出現在選單，玩家也可以自己把同名檔案放進 BigFontTuner/Fonts/。
+  -- 2026-11-15 遊戲內實測：外部 ttf 讀得到，第一次讀到時遊戲會轉成 .slug 快取；新加的檔案要整個遊戲重開才讀得到。
+  { key = "huninn", labelKey = "FONT_HUNINN", path = "Interface\\AddOns\\BigFontTuner\\Fonts\\jf-openhuninn-2.1.ttf" },
+  { key = "taipei", labelKey = "FONT_TAIPEI", path = "Interface\\AddOns\\BigFontTuner\\Fonts\\TaipeiSansTCBeta-Regular.ttf" },
   -- 存在但不列入：ARKai_C、ARHei 推測為簡中字型（可能缺繁體字）；FRIZQT__、ARIALN 是英文字型（中文會變方塊）。
   -- 自訂字型：把 .ttf 放到 BigFontTuner/Fonts/ 底下，在這裡加一行。字型必須有中文字，否則會顯示成方塊。
   -- { key = "noto", label = "思源黑體", path = "Interface\\AddOns\\BigFontTuner\\Fonts\\NotoSansTC.ttf" },
@@ -32,7 +37,12 @@ function ns.GetAvailableFonts()
   return available
 end
 
+-- 分類選單的第一項：全部介面有選字型時顯示「跟隨全部介面（字型名）」，否則「遊戲預設」
 function ns.FontLabel(f)
+  if f.key == ns.FONT_DEFAULT then
+    local g = ns.GlobalFont and ns.GlobalFont()
+    if g then return ns.L.FONT_FOLLOW_GLOBAL:format(ns.FontLabel(g)) end
+  end
   return f.label or ns.L[f.labelKey]
 end
 

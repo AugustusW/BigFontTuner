@@ -91,8 +91,10 @@ local function boot(db, otherSlash)
   SlashCmdList = {}
   BigFontTunerDB = db
   local ns = {}
-  for _, f in ipairs({ "ErrorLog.lua", "Locale.lua", "Fonts.lua", "Core.lua", "Settings.lua" }) do
-    assert(loadfile(DIR .. "/" .. f))("BigFontTuner", ns)
+  -- 依 TOC 載入：新檔案忘了列進 TOC，測試就會失敗（跟遊戲一樣）
+  for raw in io.lines(DIR .. "/BigFontTuner.toc") do
+    local file = raw:gsub("\r", "")
+    if file ~= "" and not file:match("^#") then assert(loadfile(DIR .. "/" .. file))("BigFontTuner", ns) end
   end
   return ns
 end
@@ -367,6 +369,81 @@ do
   check(pcall(ns.ApplyCategory, "bag", true), "沒有背包框架時略過不報錯")
 end
 
+-- 12. 使用者 2026-11-15 選 A：全部介面字型（只換字型檔，字級與描邊不動；分類另外選的字型優先）＋內建粉圓、台北黑體
+do
+  local HUNINN = "Interface\\AddOns\\BigFontTuner\\Fonts\\jf-openhuninn-2.1.ttf"
+  local TAIPEI = "Interface\\AddOns\\BigFontTuner\\Fonts\\TaipeiSansTCBeta-Regular.ttf"
+  EXISTING[HUNINN:lower()] = true; EXISTING[TAIPEI:lower()] = true
+  setupWorld()
+  -- 原始字型要用替身認得的檔案（EXISTING），不然還原時 SetFont 失敗會被 pcall 吞掉
+  GameFontNormal = fontObj("GameFontNormal", "Fonts\\bHEI00M.TTF", 12)
+  ZoneTextFont.flags = "THICKOUTLINE"
+  GetFonts = function() return { "GameFontNormal", "QuestFont", "ZoneTextFont", "NotThere" } end
+  LOCALE = "zhTW"; ns = boot(nil, false); login()
+  local keys = {} for _, f in ipairs(ns.GetAvailableFonts()) do keys[#keys + 1] = f.key end
+  check(table.concat(keys, ","):find("huninn,taipei", 1, true) ~= nil, "內建粉圓、台北黑體出現在字型清單（得到 " .. table.concat(keys, ",") .. "）")
+  check(ns.db.globalFont == "default", "全部介面預設不換")
+  check(GameFontNormal.file == "Fonts\\bHEI00M.TTF" and QuestFont.file == "Fonts\\bKAI00M.TTF", "預設不動任何字型")
+
+  -- 任務另外選黑體（跟原始楷體不同，才分得出「分類字型勝出」與「根本沒動」；審查回饋）
+  ns.db.categories.quest.font = "hei"; ns.ApplyCategory("quest", true)
+  ns.SetGlobalFont("huninn")
+  check(GameFontNormal.file == HUNINN and GameFontNormal.size == 12, "全部介面換成粉圓，字級不變")
+  check(ZoneTextFont.file == HUNINN and ZoneTextFont.flags == "THICKOUTLINE" and ZoneTextFont.size == 30, "區域名稱換字型但保留粗描邊與字級")
+  check(ChatFrame1.file == HUNINN and ChatFrame1.size == 14, "聊天視窗（不是字型物件）也跟著換")
+  check(QuestFont.file == "Fonts\\bHEI00M.TTF", "任務另外選了黑體，不被全部介面蓋掉（得到 " .. QuestFont.file .. "）")
+  check(ns.FontLabel(ns.GetAvailableFonts()[1]) == "跟隨全部介面（粉圓）", "分類字型選單第一項顯示跟隨全部介面（得到 "
+    .. ns.FontLabel(ns.GetAvailableFonts()[1]) .. "）")
+
+  ns.db.categories.map.titleSize = 36; ns.ApplyCategory("map", true)
+  check(ZoneTextFont.file == HUNINN and ZoneTextFont.size == 36, "分類調字級時沿用全部介面的字型（得到 " .. ZoneTextFont.file .. "）")
+  ns.ResetCategory("map")
+  check(ZoneTextFont.file == HUNINN and ZoneTextFont.size == 30 and ZoneTextFont.flags == "THICKOUTLINE", "分類恢復預設回到全部介面字型，字級描邊回原樣")
+
+  ns.SetGlobalFont("default")
+  check(GameFontNormal.file == "Fonts\\bHEI00M.TTF" and ZoneTextFont.file == "Fonts\\bKAI00M.TTF" and ChatFrame1.file == "Fonts\\bKAI00M.TTF",
+    "全部介面改回遊戲預設，全部還原")
+  check(ZoneTextFont.flags == "THICKOUTLINE" and QuestFont.file == "Fonts\\bHEI00M.TTF", "還原後描邊與任務黑體不受影響")
+  check(ns.FontLabel(ns.GetAvailableFonts()[1]) == "遊戲預設", "全部介面沒設時第一項顯示遊戲預設")
+
+  -- 存檔：重新登入時套用；不合法或找不到的字型改回預設
+  ns = boot({ globalFont = "huninn" }, false); login()
+  check(GameFontNormal.file == HUNINN, "已存的全部介面字型在登入時套用")
+  ns = boot({ globalFont = 42 }, false); login()
+  check(ns.db.globalFont == "default", "不合法的全部介面字型改回預設")
+  ns = boot({ globalFont = "gone" }, false); login()
+  check(ns.db.globalFont == "default", "找不到的全部介面字型改回預設")
+  -- 使用者 2026-11-15：上架版不含字型，自用版用 FONTS_DIR 打包；字型不進 repo 與發布白名單
+  for _, script in ipairs({ "tools/package.sh", "tools/export.sh" }) do
+    local body = io.open(DIR .. "/" .. script):read("*a")
+    check(body:find("FONTS_DIR", 1, true) ~= nil and body:find("git ls-files Fonts", 1, true) == nil, script .. " 只在指定 FONTS_DIR 時才放字型")
+  end
+  local allow = io.open(DIR .. "/.publish-allowlist"):read("*a")
+  check(allow:find(".ttf", 1, true) == nil, "字型檔不在發布白名單內")
+
+  -- 使用者 2026-11-15 截圖：頭上的角色名字沒變。名字、名條、傷害數字用的是遊戲在進入世界前讀的全域字型變數，
+  -- 要在插件載入時（ADDON_LOADED）就改，之後換字型要 /reload 才生效
+  UNIT_NAME_FONT, NAMEPLATE_FONT, DAMAGE_TEXT_FONT, STANDARD_TEXT_FONT =
+    "Fonts\\bHEI01B.TTF", "Fonts\\bHEI01B.TTF", "Fonts\\bHEI01B.TTF", "Fonts\\bLEI00D.TTF"
+  ns = boot({ globalFont = "taipei" }, false)
+  fire("ADDON_LOADED", "BigFontTuner")
+  check(UNIT_NAME_FONT == TAIPEI and NAMEPLATE_FONT == TAIPEI and DAMAGE_TEXT_FONT == TAIPEI and STANDARD_TEXT_FONT == TAIPEI,
+    "載入時就把名字、名條、傷害數字的字型變數換成全部介面字型（得到 " .. tostring(UNIT_NAME_FONT) .. "）")
+  UNIT_NAME_FONT, NAMEPLATE_FONT = "Fonts\\bHEI01B.TTF", "Fonts\\bHEI01B.TTF"
+  ns = boot(nil, false)
+  fire("ADDON_LOADED", "BigFontTuner")
+  check(UNIT_NAME_FONT == "Fonts\\bHEI01B.TTF", "全部介面沒設時不動字型變數")
+  ns = boot({ globalFont = "gone" }, false)
+  fire("ADDON_LOADED", "BigFontTuner")
+  check(UNIT_NAME_FONT == "Fonts\\bHEI01B.TTF", "找不到的字型不寫進字型變數")
+  UNIT_NAME_FONT, NAMEPLATE_FONT, DAMAGE_TEXT_FONT, STANDARD_TEXT_FONT = nil, nil, nil, nil
+
+  GetFonts = nil
+  ns = boot({ globalFont = "huninn" }, false)
+  check(pcall(login), "客戶端沒有 GetFonts 時不報錯")
+  GameFontNormal = nil
+end
+
 -- 小地圖旁插件收納按鈕
 local toc = io.open(DIR .. "/BigFontTuner.toc"):read("a")
 check(toc:find("## AddonCompartmentFunc: BigFontTuner_OnAddonCompartmentClick", 1, true) ~= nil, "TOC 指定收納按鈕點擊函式")
@@ -423,6 +500,128 @@ do
   Settings.RegisterCanvasLayoutCategory = register
   check(okSettings and ns.ErrorLog.entries()[1] and ns.ErrorLog.entries()[1].msg == "settings failed", "選項頁註冊失敗寫進紀錄")
   geterrorhandler, seterrorhandler, debugstack = nil, nil, nil
+end
+
+-- 13. 專業視窗（使用者 2026-11-16 選 1A 2A）：只改專業視窗裡的文字，清單列高跟著字變大
+do
+  local function sized(name, size, h)
+    local f = fsObj(name, size); f.h = h
+    f.GetHeight = function(self) return self.h end
+    f.SetHeight = function(self, v) self.h = v end
+    return f
+  end
+  GameFontHighlightMed2 = fontObj("GameFontHighlightMed2", "Fonts\\bKAI00M.TTF", 14)
+  GameFontHighlight_NoShadow = fontObj("GameFontHighlight_NoShadow", "Fonts\\bKAI00M.TTF", 12)
+  GameFontNormal_NoShadow = fontObj("GameFontNormal_NoShadow", "Fonts\\bKAI00M.TTF", 12)
+  ProfessionsFrame, ScrollUtil = nil, nil
+  hooked = {}
+  LOCALE = "zhTW"; ns = boot(nil, false); login()
+  local prof = ns.GetCategory("profession")
+  check(prof and prof.enabled and ns.Label(prof) == "專業", "專業分類已開放、名稱是專業")
+  check(type(ns.db.categories.profession) == "table", "專業分類有設定檔")
+  check(pcall(ns.ApplyCategory, "profession", true), "專業視窗還沒載入時套用不報錯")
+  ns.db.categories.profession.bodySize = 16
+  check(ns.GetGroupSize("profession", "body") == 16, "還沒開過專業視窗也能設定字級")
+  ns.db.categories.profession.bodySize = nil
+
+  -- 假的專業視窗：結構照暴雪 Blizzard_ProfessionsTemplates（2026-11-16 /fstack 確認 ProfessionsFrame.CraftingPage.SchematicForm）
+  local recipeRow = { SkillUps = {}, Label = sized("recipeLabel", 12, 12), Count = sized("recipeCount", 12, 12) }
+  local catRow = { CollapseIcon = {}, Label = sized("catLabel", 12, 10), scripts = {} }
+  function catRow:HookScript(ev, fn) self.scripts[ev] = fn end
+  local rows = { recipeRow, catRow }
+  local view = { calc = function(_, node)
+    local d = node:GetData()
+    if d.recipeInfo then return 20 end
+    if d.categoryInfo then return 25 end
+    if d.topPadding then return 1 end
+  end }
+  function view:GetElementExtentCalculator() return self.calc end
+  function view:SetElementExtentCalculator(c) self.calc = c end
+  function view:GetDataProvider() return {} end
+  local rebuilds, acquired, acquireRegs = 0, nil, 0
+  local sb = {}
+  function sb:ForEachFrame(fn) for _, r in ipairs(rows) do if fn(r, {}) then return end end end
+  function sb:GetView() return view end
+  function sb:Rebuild() rebuilds = rebuilds + 1 end
+  -- 照暴雪 ScrollUtil：iterateExisting 為真時直接 ForEachFrame(callback)，參數是 (frame, elementData)，
+  -- 跟建立事件的 (owner, frame, elementData, new) 不同（審查抓到：原本的替身照後者呼叫，假綠）
+  ScrollUtil = { AddAcquiredFrameCallback = function(box, cb, owner, iterateExisting)
+    acquired = function(o, frame) return cb(o, frame, {}, false) end
+    acquireRegs = acquireRegs + 1
+    if iterateExisting then box:ForEachFrame(cb) end
+  end }
+  local slotName = sized("slotName", 12, 36)
+  local form = { OutputText = sized("output", 14, 0), Description = sized("desc", 11, 0), RequiredTools = sized("tools", 11, 0) }
+  function form:Init() end
+  form.reagentSlotPool = { EnumerateActive = function()
+    local done = false
+    return function() if done then return nil end done = true return { Name = slotName }, true end
+  end }
+  ProfessionsFrame = { CraftingPage = { RecipeList = { ScrollBox = sb }, SchematicForm = form } }
+  local node = function(d) return { GetData = function() return d end } end
+
+  fire("ADDON_LOADED", "Blizzard_Professions")
+  check(acquired ~= nil, "專業視窗載入後掛上清單的列建立回呼")
+  check(hooked.Init ~= nil, "掛上右側配方資訊的 Init")
+  check(recipeRow.Label.size == 12 and form.OutputText.size == 14 and catRow.Label.size == 12, "預設不改專業視窗")
+  check(view.calc(1, node{ recipeInfo = {} }) == 20 and view.calc(1, node{ categoryInfo = {} }) == 25, "預設列高不變")
+  check(rebuilds == 0, "剛載入不重建清單")
+
+  local p = ns.db.categories.profession
+  p.titleSize = 21; p.bodySize = 18; ns.ApplyCategory("profession", true)
+  check(form.OutputText.size == 21, "標題組：右側配方名稱 21")
+  check(catRow.Label.size == 18, "標題組：清單分類標題依比例 12*21/14=18（得到 " .. catRow.Label.size .. "）")
+  check(recipeRow.Label.size == 18 and recipeRow.Count.size == 18, "內文組：配方列名稱與可製作數量 18")
+  check(form.Description.size == 17 and form.RequiredTools.size == 17, "內文組：說明、工具依比例 11*18/12≈17（得到 " .. form.Description.size .. "／" .. form.RequiredTools.size .. "）")
+  check(slotName.size == 18, "內文組：材料名稱 18")
+  check(view.calc(1, node{ recipeInfo = {} }) == 26, "配方列高 20+(18-12)=26（得到 " .. tostring(view.calc(1, node{ recipeInfo = {} })) .. "）")
+  check(view.calc(1, node{ categoryInfo = {} }) == 31, "分類列高 25+(18-12)=31")
+  check(view.calc(1, node{ topPadding = true }) == 1, "其他元素列高不變")
+  local scaled = ns.ScaledSize
+  ns.ScaledSize = function() error("broken") end
+  local okCalc, h = pcall(view.calc, 1, node{ recipeInfo = {} })
+  ns.ScaledSize = scaled
+  check(okCalc and h == 20, "我們的列高計算出錯時退回暴雪原本的 20、不中斷排版")
+  check(recipeRow.Label.h == 18 and recipeRow.Count.h == 18 and catRow.Label.h == 16, "文字框高度跟著加大（12+6、10+6）")
+  check(rebuilds == 1, "設定改變時重建清單")
+  ns.ApplyCategory("profession")
+  check(rebuilds == 1, "設定沒變不重建清單")
+
+  local newRow = { SkillUps = {}, Label = sized("newLabel", 12, 12), Count = sized("newCount", 12, 12) }
+  acquired(nil, newRow)
+  check(newRow.Label.size == 18 and newRow.Label.h == 18, "捲動後新建立的列也套用")
+
+  catRow.Label:SetFont("Fonts\\bKAI00M.TTF", 12, "") -- 遊戲 OnLeave 用 SetFontObject 換回原本字型
+  catRow.scripts.OnLeave(catRow)
+  check(catRow.Label.size == 18, "滑鼠移開分類標題後字級不被遊戲洗掉")
+
+  local slot2 = sized("slot2", 12, 36)
+  form.reagentSlotPool.EnumerateActive = function()
+    local done = false
+    return function() if done then return nil end done = true return { Name = slot2 }, true end
+  end
+  hooked.Init(form)
+  check(slot2.size == 18, "換配方後新的材料名稱也套用")
+
+  ns.ResetCategory("profession")
+  check(form.OutputText.size == 14 and recipeRow.Label.size == 12 and catRow.Label.size == 12 and slot2.size == 12, "恢復預設回到原始字級")
+  check(recipeRow.Label.h == 12 and catRow.Label.h == 10, "恢復預設回到原始文字框高度")
+  check(view.calc(1, node{ recipeInfo = {} }) == 20, "恢復預設列高回到 20")
+  check(rebuilds == 2, "恢復預設重建清單")
+  newRow.Label:SetFont("Fonts\\bKAI00M.TTF", 18, "") -- 回收池裡還留著放大字的列
+  acquired(nil, newRow)
+  check(newRow.Label.size == 12 and newRow.Label.h == 12, "回收的列重新使用時還原成原始字級")
+
+  fire("ADDON_LOADED", "Blizzard_Professions")
+  check(acquireRegs == 1, "重複的載入事件不重複掛回呼")
+
+  -- 登入前專業視窗已經載入（例如其他插件先載入它）
+  C_AddOns.IsAddOnLoaded = function(n) return n == "Blizzard_Professions" end
+  acquired, acquireRegs = nil, 0
+  ns = boot(nil, false); login()
+  check(acquired ~= nil and acquireRegs == 1, "登入時專業視窗已載入也會掛上")
+  C_AddOns.IsAddOnLoaded = nil
+  ProfessionsFrame, ScrollUtil = nil, nil
 end
 
 os.exit(FAILED and 1 or 0)
