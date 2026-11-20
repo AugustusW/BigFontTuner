@@ -1,0 +1,58 @@
+# 發版：push tag v<版本> → 打包 → draft GitHub Release（附 zip）→ 上傳 CurseForge → 轉正式。
+# 手動執行（workflow_dispatch）：
+#   dry_run=true（預設）：用目前分支的程式打包、查遊戲版本、印出要送出的內容，不建 Release、不上傳；tag 不必存在。
+#   dry_run=false：用 tag 的內容重跑發版（中途失敗時用）；skip_curseforge=true 只轉正式不上傳。
+# 邏輯都在 .github/scripts/release.py。CF_API_TOKEN 放在 release environment。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '版本 tag，例如 v0.8.0'
+        required: true
+        type: string
+      dry_run:
+        description: '演練：不建 Release、不上傳'
+        type: boolean
+        default: true
+      skip_curseforge:
+        description: '不上傳 CurseForge（已手動確認上傳過時用）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ (github.event_name == 'workflow_dispatch' && !inputs.dry_run) && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: 測試
+        run: python3 -m unittest discover -s .github/scripts
+
+      - name: 發版
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_SKIP_CURSEFORGE: ${{ inputs.skip_curseforge }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release.py run
