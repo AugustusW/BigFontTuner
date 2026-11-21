@@ -2,6 +2,28 @@
 
 每個版本一段，標題是 `## <版本>`；段內小標用 `###`。發版時 GitHub Release 與 CurseForge 的更新說明取自對應的段落。
 
+## 0.8.0
+
+### New
+
+- **Gamepad and arrow-key control in the settings**: with the settings open, Up/Down (D-pad, left stick or arrow keys) moves between options, Left/Right changes the value (sliders, category tabs and every dropdown), and A (Enter) presses a button. A yellow frame shows the current option after the first press. While the settings are open, the stick selects options instead of moving your character; close the settings to walk again. Not active in combat.
+- `/bft nav off` turns this control off if it gets in your way (`/bft nav on` turns it back on).
+
+### Fixed
+
+- The note under "Global font" no longer overlaps the category tabs and the preview title with large fonts; the language label is no longer cut off. The standalone window is taller.
+- `/bft errors` now also lists actions the game blocked.
+
+### 新增
+
+- **設定頁支援手把與方向鍵**：設定開著時，上下（十字鍵、類比或方向鍵）在各項之間移動，左右調整數值（滑桿、分類頁籤與所有下拉選單），A（Enter）按下按鈕。第一次按下後會出現黃色框標示目前的項目。設定開著時類比用來選擇、不會移動角色，關掉設定就能走路。戰鬥中不接管。
+- 不想用時可以打 `/bft nav off` 關掉（`/bft nav on` 重新開啟）。
+
+### 修正
+
+- 「全部介面字型」下方的說明在大字型時不再壓到分類按鈕與預覽標題；介面語言的標籤不再被切掉。獨立視窗加高。
+- `/bft errors` 也會列出被遊戲封鎖的動作。
+
 ## 0.7.0
 
 ### New

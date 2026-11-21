@@ -418,7 +418,10 @@ end
 -- /bigfonttuner 在載入當下就註冊，不等登入，也不受登入時其他步驟出錯影響
 -- （CurseForge 回報「Slash commands do not work」：登入流程中途出錯時，原本排在後面的註冊不會執行）
 SLASH_BIGFONTTUNER1 = "/bigfonttuner"
-SlashCmdList.BIGFONTTUNER = function() ns.OpenSettings() end
+SlashCmdList.BIGFONTTUNER = function(msg)
+  if ns.NavCommand and ns.NavCommand(msg) then return end
+  ns.OpenSettings()
+end
 
 local function registerShortSlash()
   if slashTaken("/bft") then

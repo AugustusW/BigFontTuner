@@ -6,10 +6,12 @@ local L = ns.L
 
 local selected = "quest" -- 目前選中的分類（兩份畫面共用）
 local instances = {}      -- 每份畫面的元件，用來一起重新整理
+ns.settingsInstances = instances -- 測試用（tests/harness.lua）
 
 local function cur()
   return ns.db.categories[selected]
 end
+function ns.settingsSelected() return selected end -- 測試用
 
 local function makeSlider(parent, label, y, onChange)
   local text = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -42,6 +44,7 @@ local function makeSlider(parent, label, y, onChange)
     if not self.silent then onChange(v) end
   end)
 
+  s.rowLeft, s.rowRight = text, value -- 亮框框住整列
   function s:SetLabel(t) text:SetText(t) end
 
   -- 沒有標題組的分類（聊天）整列隱藏：標籤、滑桿、數值一起
@@ -59,7 +62,8 @@ local function makeSlider(parent, label, y, onChange)
   return s
 end
 
-local function makeDropdown(parent, label, y, buildItems, x)
+-- entries()：回傳 { label, isSelected(), select() } 陣列；選單與方向鍵切換共用同一份清單與 setter
+local function makeDropdown(parent, label, y, entries, x, stacked)
   x = x or 16
   local text = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   text:SetPoint("TOPLEFT", x, y)
@@ -67,8 +71,13 @@ local function makeDropdown(parent, label, y, buildItems, x)
 
   local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
   dd:SetWidth(180)
-  dd:SetPoint("TOPLEFT", x + 100, y + 6)
-  dd:SetupMenu(function(_, root) buildItems(root) end)
+  -- stacked：標籤放在上一行（雙語標籤較長，放同一行會被下拉選單蓋住）
+  if stacked then dd:SetPoint("TOPLEFT", x - 2, y - 18) else dd:SetPoint("TOPLEFT", x + 100, y + 6) end
+  dd:SetupMenu(function(_, root)
+    for _, e in ipairs(entries()) do root:CreateRadio(e.label, e.isSelected, e.select) end
+  end)
+  dd.entries = entries
+  dd.rowLeft, dd.rowRight = text, dd
   return dd
 end
 
@@ -102,7 +111,7 @@ end
 
 -- 在 panel 裡建一份完整的設定內容
 local function buildContent(panel)
-  local w = {}
+  local w = { panel = panel }
 
   local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetPoint("TOPLEFT", 16, -16)
@@ -112,16 +121,21 @@ local function buildContent(panel)
   ver:SetText("v" .. (C_AddOns.GetAddOnMetadata(addonName, "Version") or "?"))
 
   -- 全部介面字型（使用者 2026-11-15 選 A）：放在標題右邊，跟分類設定分開
-  w.global = makeDropdown(panel, L.GLOBAL_FONT, -16, function(root)
+  w.global = makeDropdown(panel, L.GLOBAL_FONT, -16, function()
+    local list = {}
     for _, f in ipairs(ns.GetAvailableFonts()) do
-      root:CreateRadio(f.key == ns.FONT_DEFAULT and L.FONT_GAME_DEFAULT or ns.FontLabel(f),
-        function() return ns.db.globalFont == f.key end,
-        function() ns.SetGlobalFont(f.key); refreshAll() end)
+      list[#list + 1] = {
+        label = f.key == ns.FONT_DEFAULT and L.FONT_GAME_DEFAULT or ns.FontLabel(f),
+        isSelected = function() return ns.db.globalFont == f.key end,
+        select = function() ns.SetGlobalFont(f.key); refreshAll() end,
+      }
     end
+    return list
   end, 300)
   local gnote = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-  gnote:SetPoint("TOPLEFT", 300, -38)
-  gnote:SetWidth(340)
+  -- 說明放在分類頁籤下面、橫跨整個寬度（2026-11-21：放在右上角時，大字型會壓到頁籤與預覽標題）
+  gnote:SetPoint("TOPLEFT", 16, -82)
+  gnote:SetWidth(620)
   gnote:SetJustifyH("LEFT")
   gnote:SetText(L.GLOBAL_FONT_NOTE)
 
@@ -133,7 +147,7 @@ local function buildContent(panel)
     local label = ns.Label(c)
     b:SetSize(c.enabled and 80 or 110, 22)
     b:SetText(c.enabled and label or L.COMING_LATER:format(label))
-    if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 16, -64) end
+    if prev then b:SetPoint("LEFT", prev, "RIGHT", 4, 0) else b:SetPoint("TOPLEFT", 16, -50) end
     if c.enabled then
       b:SetScript("OnClick", function() selected = c.key; refreshAll() end)
     else
@@ -144,45 +158,57 @@ local function buildContent(panel)
   end
 
   -- 左側：設定
-  w.title = makeSlider(panel, L.TITLE_SIZE, -96, function(v) cur().titleSize = v; changed() end)
-  w.body = makeSlider(panel, L.BODY_SIZE, -130, function(v) cur().bodySize = v; changed() end)
+  w.title = makeSlider(panel, L.TITLE_SIZE, -150, function(v) cur().titleSize = v; changed() end)
+  w.body = makeSlider(panel, L.BODY_SIZE, -184, function(v) cur().bodySize = v; changed() end)
 
-  w.font = makeDropdown(panel, L.FONT, -168, function(root)
+  w.font = makeDropdown(panel, L.FONT, -222, function()
+    local list = {}
     for _, f in ipairs(ns.GetAvailableFonts()) do
-      root:CreateRadio(ns.FontLabel(f),
-        function() return cur().font == f.key end,
-        function() cur().font = f.key; changed() end)
+      list[#list + 1] = {
+        label = ns.FontLabel(f),
+        isSelected = function() return cur().font == f.key end,
+        select = function() cur().font = f.key; changed() end,
+      }
     end
+    return list
   end)
 
-  w.outline = makeDropdown(panel, L.OUTLINE, -206, function(root)
+  w.outline = makeDropdown(panel, L.OUTLINE, -260, function()
+    local list = {}
     for _, o in ipairs(ns.OUTLINES) do
-      root:CreateRadio(ns.Label(o),
-        function() return cur().outline == o.key end,
-        function() cur().outline = o.key; changed() end)
+      list[#list + 1] = {
+        label = ns.Label(o),
+        isSelected = function() return cur().outline == o.key end,
+        select = function() cur().outline = o.key; changed() end,
+      }
     end
+    return list
   end)
 
   local reset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
   reset:SetSize(150, 22)
-  reset:SetPoint("TOPLEFT", 16, -246)
+  reset:SetPoint("TOPLEFT", 16, -300)
   reset:SetText(L.RESET)
   reset:SetScript("OnClick", function() ns.ResetCategory(selected); refreshAll() end)
 
   -- 介面語言：切換後要重新載入介面才會套用（文字在建立畫面時就決定了）
   local reloadNote, reloadBtn
-  w.language = makeDropdown(panel, L.LANGUAGE, -290, function(root)
+  w.language = makeDropdown(panel, L.LANGUAGE, -340, function()
+    local list = {}
     for _, c in ipairs(ns.LANGUAGE_CHOICES) do
-      root:CreateRadio(c.label or L.LANGUAGE_AUTO,
-        function() return ns.db.locale == c.key end,
-        function()
+      list[#list + 1] = {
+        label = c.label or L.LANGUAGE_AUTO,
+        isSelected = function() return ns.db.locale == c.key end,
+        select = function()
           ns.db.locale = c.key
           for _, inst in ipairs(instances) do inst.showReload() end
-        end)
+        end,
+      }
     end
-  end)
+    return list
+  end, nil, true)
   reloadNote = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  reloadNote:SetPoint("TOPLEFT", 16, -320)
+  reloadNote:SetPoint("TOPLEFT", 16, -398)
   reloadNote:SetText(L.RELOAD_NOTE)
   reloadNote:Hide()
   reloadBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -191,11 +217,84 @@ local function buildContent(panel)
   reloadBtn:SetText(L.RELOAD)
   reloadBtn:SetScript("OnClick", function() ReloadUI() end)
   reloadBtn:Hide()
-  function w.showReload() reloadNote:Show(); reloadBtn:Show() end
+  local reloadShown = false
+  function w.showReload() reloadShown = true; reloadNote:Show(); reloadBtn:Show() end
+
+  -- 方向鍵導航（手把模式下十字鍵＝方向鍵、A＝Enter，2026-11-20 永恆實測）。決策在 Nav.lua。
+  local function sliderStep(s, d)
+    local v = math.floor(s:GetValue() + 0.5)
+    local nv = math.max(ns.SIZE_MIN, math.min(ns.SIZE_MAX, v + d))
+    if nv ~= v then s:SetValue(nv) end
+  end
+  local function tabStep(d)
+    local keys, at = {}, nil
+    for _, c in ipairs(ns.CATEGORIES) do
+      if c.enabled then
+        keys[#keys + 1] = c.key
+        if c.key == selected then at = #keys end
+      end
+    end
+    local nk = at and keys[at + d]
+    if nk then selected = nk; refreshAll() end
+  end
+  local function ddStep(dd, d)
+    local e = ns.Nav.step(dd.entries(), d)
+    if e then e.select() end
+  end
+  local always = function() return true end
+  local function row(id, shown, left, right, enter, box)
+    return { id = id, isShown = shown, isEnabled = always, left = left, right = right, enter = enter, box = box }
+  end
+  local function ddRow(id, dd)
+    return row(id, always, function() ddStep(dd, -1) end, function() ddStep(dd, 1) end, nil,
+      function() return dd.rowLeft, dd.rowRight end)
+  end
+  local function sliderRow(id, sl, shown)
+    return row(id, shown, function() sliderStep(sl, -1) end, function() sliderStep(sl, 1) end, nil,
+      function() return sl.rowLeft, sl.rowRight end)
+  end
+  w.nav = {
+    ddRow("global", w.global),
+    row("tabs", always, function() tabStep(-1) end, function() tabStep(1) end, nil,
+      function() local b = w.tabs[selected]; return b, b end),
+    sliderRow("title", w.title, function() return ns.GetCategory(selected).title ~= nil end),
+    sliderRow("body", w.body, always),
+    ddRow("font", w.font),
+    ddRow("outline", w.outline),
+    row("reset", always, nil, nil, function() ns.ResetCategory(selected); refreshAll() end,
+      function() return reset, reset end),
+    ddRow("language", w.language),
+    row("reload", function() return reloadShown end, nil, nil, function() ReloadUI() end,
+      function() return reloadNote, reloadBtn end),
+  }
+  w.navState = {}
+
+  -- 亮框：四條邊，不吃滑鼠；第一次按方向鍵後才出現
+  local hl = CreateFrame("Frame", nil, panel)
+  hl:EnableMouse(false)
+  hl:SetFrameLevel(panel:GetFrameLevel() + 20)
+  local function edge(p1, p2, horizontal)
+    local t = hl:CreateTexture(nil, "OVERLAY")
+    t:SetColorTexture(1, 0.82, 0, 0.9)
+    t:SetPoint(p1); t:SetPoint(p2)
+    if horizontal then t:SetHeight(2) else t:SetWidth(2) end
+  end
+  edge("TOPLEFT", "TOPRIGHT", true); edge("BOTTOMLEFT", "BOTTOMRIGHT", true)
+  edge("TOPLEFT", "BOTTOMLEFT", false); edge("TOPRIGHT", "BOTTOMRIGHT", false)
+  hl:Hide()
+  function w.highlight(item)
+    if not (item and w.navState.revealed and item.box) then hl:Hide(); return end
+    local a, b = item.box()
+    if not (a and b) then hl:Hide(); return end
+    hl:ClearAllPoints()
+    hl:SetPoint("TOPLEFT", a, "TOPLEFT", -6, 6)
+    hl:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 6, -6)
+    hl:Show()
+  end
 
   -- 右側：預覽（仿任務視窗的羊皮紙底）
   local plabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  plabel:SetPoint("TOPLEFT", 340, -80)
+  plabel:SetPoint("TOPLEFT", 340, -134)
   plabel:SetText(L.PREVIEW)
 
   local box = CreateFrame("Frame", nil, panel, "BackdropTemplate")
@@ -334,23 +433,128 @@ local function buildContent(panel)
   hint:SetPoint("BOTTOMLEFT", 16, 14)
   hint:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
   hint:SetJustifyH("LEFT")
-  hint:SetText(L.HINT .. "\n" .. L.COMMANDS:format("/bigfonttuner" .. (SLASH_BIGFONTTUNER2 and ", /bft" or "")))
+  hint:SetText(L.HINT .. "\n" .. L.NAV_HINT .. "\n" .. L.COMMANDS:format("/bigfonttuner" .. (SLASH_BIGFONTTUNER2 and ", /bft" or "")))
 
   -- 預覽數字是建立畫面時才有的，打開時套用一次背包設定（失敗只記錄，不擋設定頁）
   panel:HookScript("OnShow", function() (ns.ErrorLog and ns.ErrorLog.try or pcall)(ns.ApplyCategory, "bag") end)
   panel:HookScript("OnShow", refreshAll)
+  panel:HookScript("OnShow", function() ns.NavSetActive(w) end)
+  panel:HookScript("OnHide", function() ns.NavClearActive(w) end)
   table.insert(instances, w)
   return w
 end
 
 local win
 
+-- ---- 方向鍵接管（手把模式下十字鍵＝方向鍵、A＝Enter）----
+-- 只在某一份設定畫面顯示中、非戰鬥、沒用 /bft nav off 關掉時接管。
+-- 啟用時機只看 OnShow／OnHide：選項頁掛進面板前 IsVisible() 恆為 true，不能拿來判斷。
+-- 戰鬥中不碰任何鍵盤 API；進戰鬥就停用，戰鬥結束且設定仍開才恢復。
+local activeNav
+local navKeys = CreateFrame("Frame", "BigFontTunerNavKeys", UIParent)
+
+-- 鍵盤 API 在戰鬥鎖定中由插件呼叫會被遊戲封鎖（2026-11-21 實測跳出 ADDON_ACTION_BLOCKED），
+-- 所以一律先看 InCombatLockdown()，而且狀態沒變就不呼叫（沒開過設定時進出戰鬥完全不碰）。
+local kbEnabled = false
+local function syncKeyboard()
+  if InCombatLockdown() then return end
+  local want = activeNav ~= nil and not ns.db.navDisabled
+  if want then
+    navKeys:EnableKeyboard(true)
+    navKeys:SetPropagateKeyboardInput(true) -- 旗標會留著：預設放行，只有處理的鍵才擋
+    kbEnabled = true
+  elseif kbEnabled then
+    navKeys:EnableKeyboard(false)
+    kbEnabled = false
+  end
+end
+
+function ns.NavSetActive(w)
+  activeNav = w
+  ns.Nav.reset(w.navState)
+  w.highlight(nil)
+  if not InCombatLockdown() then syncKeyboard() end
+end
+
+function ns.NavClearActive(w)
+  if activeNav ~= w then return end
+  activeNav = nil
+  w.highlight(nil)
+  if not InCombatLockdown() then syncKeyboard() end
+end
+
+local function modifierDown()
+  return (IsShiftKeyDown and IsShiftKeyDown()) or (IsControlKeyDown and IsControlKeyDown())
+    or (IsAltKeyDown and IsAltKeyDown()) or false
+end
+
+navKeys:SetScript("OnKeyDown", function(self, key)
+  if InCombatLockdown() then return end
+  self:SetPropagateKeyboardInput(true)
+  local w = activeNav
+  if not w then return end
+  -- 沒收到 OnHide 但面板已經看不到（保險）：不再接管，避免按鍵一直被吃（記憶 2075 的同類陷阱）
+  if not w.panel:IsVisible() then ns.NavClearActive(w); return end
+  local ctx = {
+    combat = false,
+    modifier = modifierDown() and true or false,
+    editFocus = (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() ~= nil) or false,
+  }
+  local handled = ns.Nav.handle(w.navState, w.nav, key, ctx)
+  if ns.db.navDebug then
+    print(("BigFontTuner nav: %s shift=%s ctrl=%s alt=%s edit=%s -> %s"):format(tostring(key),
+      tostring(IsShiftKeyDown and IsShiftKeyDown() or false), tostring(IsControlKeyDown and IsControlKeyDown() or false),
+      tostring(IsAltKeyDown and IsAltKeyDown() or false), tostring(ctx.editFocus), handled and "handled" or "passed"))
+  end
+  if handled then
+    self:SetPropagateKeyboardInput(false)
+    ns.Nav.ensureFocus(w.navState, w.nav)
+    local focused
+    for _, it in ipairs(w.nav) do if it.id == w.navState.focus then focused = it end end
+    w.highlight(focused)
+  end
+end)
+-- 放開按鍵時一律恢復往下傳：被吃掉的鍵不能讓之後其他鍵（例如移動鍵）的放開也被擋
+navKeys:SetScript("OnKeyUp", function(self)
+  if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end
+end)
+navKeys:RegisterEvent("PLAYER_REGEN_DISABLED")
+navKeys:RegisterEvent("PLAYER_REGEN_ENABLED")
+navKeys:SetScript("OnEvent", function(_, event)
+  if event == "PLAYER_REGEN_DISABLED" then
+    -- 事件觸發時若鎖定還沒開始，趁機停用；已經鎖定就不碰（放開按鍵時已恢復往下傳）
+    if kbEnabled and not InCombatLockdown() then
+      navKeys:EnableKeyboard(false)
+      kbEnabled = false
+    end
+  else
+    syncKeyboard()
+  end
+end)
+
+-- /bft nav on|off、/bft navdebug；回傳是否已處理
+function ns.NavCommand(msg)
+  local sub, arg = (msg or ""):lower():match("^%s*(%S+)%s*(%S*)")
+  if sub == "nav" and (arg == "on" or arg == "off") then
+    ns.db.navDisabled = arg == "off"
+    print(arg == "off" and L.NAV_OFF or L.NAV_ON)
+    if not InCombatLockdown() then syncKeyboard() end
+    return true
+  end
+  if sub == "navdebug" then
+    ns.db.navDebug = not ns.db.navDebug
+    print(ns.db.navDebug and L.NAV_DEBUG_ON or L.NAV_DEBUG_OFF)
+    return true
+  end
+  return false
+end
+
 local function createWindow()
   local ok, f = pcall(CreateFrame, "Frame", "BigFontTunerWindow", UIParent, "BasicFrameTemplateWithInset")
   if not ok then
     f = CreateFrame("Frame", "BigFontTunerWindow", UIParent, "BackdropTemplate")
   end
-  f:SetSize(680, 470)
+  f:SetSize(680, 580)
   f:SetPoint("CENTER")
   f:SetFrameStrata("DIALOG")
   f:SetMovable(true)

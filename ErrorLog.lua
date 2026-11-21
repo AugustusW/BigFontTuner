@@ -282,7 +282,17 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function(_, ev, name)
+-- 被遊戲封鎖的動作（戰鬥中呼叫受保護函式等）不是 Lua 錯誤，遊戲提示也不說是哪個函式，另外記下來
+events:RegisterEvent("ADDON_ACTION_BLOCKED")
+events:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+events:SetScript("OnEvent", function(_, ev, name, func)
   if ev == "ADDON_LOADED" and name == ADDON then attach()
-  elseif ev == "PLAYER_LOGIN" then wrapSlash() end
+  elseif ev == "PLAYER_LOGIN" then wrapSlash()
+  elseif (ev == "ADDON_ACTION_BLOCKED" or ev == "ADDON_ACTION_FORBIDDEN") and name == ADDON then
+    pcall(function()
+      upsert({ msg = ev .. ": " .. tostring(func), stack = "", count = 1,
+        last = date("%Y-%m-%d %H:%M:%S"), env = env() })
+      refreshWindow()
+    end)
+  end
 end)

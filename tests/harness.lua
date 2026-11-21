@@ -11,7 +11,13 @@ local function stub(name)
   return setmetatable(o, { __index = function(t, k)
     return function(self, ...)
       if k == "SetScript" then local ev, fn = ...; t.scripts[ev] = fn end
+      if k == "HookScript" then
+        local ev, fn = ...
+        local hk = rawget(t, "hooks") or {}; rawset(t, "hooks", hk)
+        hk[ev] = hk[ev] or {}; table.insert(hk[ev], fn)
+      end
       if k == "GetID" then return 42 end
+      if k == "GetFrameLevel" then return 1 end
       if k == "IsVisible" or k == "IsShown" then return rawget(t, "visible") or false end
       if k == "Show" then rawset(t, "visible", true) end
       if k == "Hide" then rawset(t, "visible", false) end
@@ -52,6 +58,28 @@ function CreateFrame(kind, name, parent)
     rawset(f, "IsShown", function(self) return rawget(self, "shown") end)
   end
   if name == "BigFontTunerErrorLogFrame" then rawset(f, "TitleText", stub("TitleText")) end
+  if name == "BigFontTunerNavKeys" then
+    -- 記錄鍵盤相關呼叫，驗證什麼時候接管按鍵、什麼時候往下傳
+    navKeys = f
+    rawset(f, "calls", {})
+    rawset(f, "EnableKeyboard", function(self, on) table.insert(self.calls, "enable:" .. tostring(on)); rawset(self, "kb", on) end)
+    rawset(f, "SetPropagateKeyboardInput", function(self, on) table.insert(self.calls, "prop:" .. tostring(on)); rawset(self, "prop", on) end)
+  end
+  if kind == "Slider" then
+    -- 假滑桿：存值、限制範圍、SetValue 觸發 OnValueChanged（遊戲的滑桿程式設值也會觸發）
+    rawset(f, "silent", false) -- stub 對不存在的欄位會回傳函式（真值），遊戲裡是 nil
+    rawset(f, "SetMinMaxValues", function(self, lo, hi) rawset(self, "lo", lo); rawset(self, "hi", hi) end)
+    rawset(f, "GetValue", function(self) return rawget(self, "value") or 0 end)
+    rawset(f, "SetValue", function(self, v)
+      local lo, hi = rawget(self, "lo") or -math.huge, rawget(self, "hi") or math.huge
+      v = math.max(lo, math.min(hi, v))
+      rawset(self, "value", v)
+      if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, v) end
+    end)
+  end
+  if kind == "DropdownButton" then
+    rawset(f, "SetupMenu", function(self, gen) rawset(self, "menuGen", gen) end)
+  end
   if kind == "Frame" and not parent then table.insert(frames, f) end
   f.RegisterEvent = function(self, ev) local e = rawget(self, "events") or {}; rawset(self, "events", e); e[ev] = true; return self end
   return f
@@ -622,6 +650,218 @@ do
   check(acquired ~= nil and acquireRegs == 1, "登入時專業視窗已載入也會掛上")
   C_AddOns.IsAddOnLoaded = nil
   ProfessionsFrame, ScrollUtil = nil, nil
+end
+
+-- 11. 下拉選項由 entries 提供：選單與方向鍵用同一份清單、同一個 setter（手把導航，2026-11-20）
+do
+  LOCALE = "zhTW"; ns = boot(nil, false); login()
+  local w = ns.settingsInstances and ns.settingsInstances[1]
+  check(w ~= nil, "設定畫面實例可供測試存取")
+  if w then
+    for _, key in ipairs({ "global", "font", "outline", "language" }) do
+      local dd = w[key]
+      local radios = {}
+      local root = { CreateRadio = function(_, label, isSel, set) radios[#radios + 1] = { label = label, isSel = isSel, set = set } end }
+      if rawget(dd, "menuGen") then rawget(dd, "menuGen")(dd, root) end
+      local entries = type(rawget(dd, "entries")) == "function" and dd.entries() or {}
+      local same = #radios > 0 and #radios == #entries
+      for i, r in ipairs(radios) do
+        if not entries[i] or r.label ~= entries[i].label or r.isSel() ~= entries[i].isSelected() then same = false end
+      end
+      check(same, key .. " 下拉的選單項目與 entries 一致（" .. #radios .. "／" .. #entries .. "）")
+    end
+    local fe = w.font.entries and w.font.entries() or {}
+    if fe[2] then fe[2].select() end
+    check(fe[2] ~= nil and ns.db.categories.quest.font == "kai", "entries 的 select 寫入目前分類的字型（得到 " .. tostring(ns.db.categories.quest.font) .. "）")
+  end
+end
+
+-- 12. 方向鍵導航的項目表（手把模式下十字鍵＝方向鍵，2026-11-20 永恆實測）
+do
+  LOCALE = "zhTW"; ns = boot(nil, false); login()
+  local w = ns.settingsInstances[1]
+  local ids = {}
+  for _, it in ipairs(w.nav or {}) do ids[#ids + 1] = it.id end
+  check(table.concat(ids, ",") == "global,tabs,title,body,font,outline,reset,language,reload", "項目順序（得到 " .. table.concat(ids, ",") .. "）")
+  local byId = {}
+  for _, it in ipairs(w.nav or {}) do byId[it.id] = it end
+  local function sel() for _, it in ipairs(w.nav) do end return nil end
+  if byId.body then
+    local before = ns.GetGroupSize("quest", "body")
+    w.body:SetSilently(before) -- 面板顯示時 refreshAll 會設好目前值
+    byId.body.right()
+    check(ns.db.categories.quest.bodySize == before + 1 and QuestFont.size == before + 1, "內文右鍵 +1 並即時套用（" .. before .. "→" .. tostring(ns.db.categories.quest.bodySize) .. "）")
+    byId.body.left()
+    check(ns.db.categories.quest.bodySize == before, "內文左鍵 -1")
+    ns.db.categories.quest.bodySize = ns.SIZE_MAX; ns.ApplyCategory("quest"); w.body:SetSilently(ns.SIZE_MAX)
+    byId.body.right()
+    check(ns.db.categories.quest.bodySize == ns.SIZE_MAX, "到上限再右鍵不變")
+    ns.db.categories.quest.bodySize = ns.SIZE_MIN; ns.ApplyCategory("quest"); w.body:SetSilently(ns.SIZE_MIN)
+    byId.body.left()
+    check(ns.db.categories.quest.bodySize == ns.SIZE_MIN, "到下限再左鍵不變")
+  end
+  if byId.tabs then
+    local enabled = {}
+    for _, c in ipairs(ns.CATEGORIES) do if c.enabled then enabled[#enabled + 1] = c.key end end
+    byId.tabs.right()
+    check(ns.settingsSelected() == enabled[2], "頁籤右鍵到下一個啟用分類（得到 " .. tostring(ns.settingsSelected()) .. "）")
+    check(byId.title.isShown() == (ns.GetCategory(enabled[2]).title ~= nil), "沒有標題組的分類隱藏標題項目")
+    for _ = 1, #ns.CATEGORIES + 2 do byId.tabs.right() end
+    check(ns.settingsSelected() == enabled[#enabled], "到最後一個分類再右鍵不變")
+    for _ = 1, #ns.CATEGORIES + 2 do byId.tabs.left() end
+    check(ns.settingsSelected() == enabled[1], "左鍵回到第一個分類且不循環")
+  end
+  if byId.font then
+    local entries = w.font.entries()
+    local idx
+    for i, e in ipairs(entries) do if e.isSelected() then idx = i end end
+    byId.font.right()
+    local now
+    for i, e in ipairs(w.font.entries()) do if e.isSelected() then now = i end end
+    check(idx and now == idx + 1, "字型右鍵換到下一個選項")
+  end
+  if byId.reload and byId.reset then
+    check(byId.reload.isShown() == false, "還沒改語言時重新載入項目隱藏")
+    w.showReload()
+    check(byId.reload.isShown() == true and type(byId.reload.enter) == "function", "改語言後重新載入項目出現且可按")
+    ns.db.categories.quest.bodySize = 20
+    byId.reset.enter()
+    check(ns.db.categories.quest.bodySize == nil, "重設項目按 Enter 恢復預設")
+  end
+  check(ns.LOCALES.enUS.NAV_HINT ~= nil and ns.LOCALES.zhTW.NAV_HINT ~= nil, "提示文字中英都有")
+  check(type(w.highlight) == "function", "有亮框函式")
+end
+
+-- 13. 方向鍵接管：只在設定頁顯示中、非戰鬥、沒關掉功能時；處理的鍵不往下傳，其他照舊
+do
+  local function fireHook(f, ev)
+    if ev == "OnShow" then rawset(f, "visible", true) elseif ev == "OnHide" then rawset(f, "visible", false) end
+    for _, fn in ipairs((rawget(f, "hooks") or {})[ev] or {}) do fn(f) end
+  end
+  local function key(k) navKeys.scripts.OnKeyDown(navKeys, k); return rawget(navKeys, "prop") end
+  local function last(prefix)
+    for i = #navKeys.calls, 1, -1 do if navKeys.calls[i]:sub(1, #prefix) == prefix then return navKeys.calls[i] end end
+  end
+  IsShiftKeyDown = function() return false end
+  IsControlKeyDown = function() return false end
+  IsAltKeyDown = function() return false end
+  GetCurrentKeyBoardFocus = function() return nil end
+  LOCALE = "zhTW"; navKeys = nil; ns = boot(nil, false); login()
+  check(navKeys ~= nil, "建立鍵盤接收 frame")
+  check(last("enable:") ~= "enable:true", "設定頁還沒顯示前不接管按鍵")
+  local w1 = ns.settingsInstances[1]
+  fireHook(w1.panel, "OnShow")
+  check(rawget(navKeys, "kb") == true and last("prop:") == "prop:true", "設定頁顯示後接管，且預設往下傳")
+  check(key("DOWN") == false and w1.navState.revealed == true, "第一次 DOWN 只顯示亮框且不往下傳")
+  check(key("DOWN") == false and w1.navState.focus == "tabs", "DOWN 移到下一項")
+  check(key("ESCAPE") == true, "ESCAPE 往下傳（照原本關閉設定）")
+  check(key("LSHIFT") == true and key("W") == true, "其他鍵往下傳")
+  check(key("ENTER") == false, "焦點不是按鈕時 ENTER 吃掉（手把 A 不會打開聊天框）")
+  navKeys.scripts.OnKeyUp(navKeys, "DOWN")
+  check(rawget(navKeys, "prop") == true, "放開按鍵時恢復往下傳（被吃掉的鍵不會讓其他鍵的放開被擋）")
+  GetCurrentKeyBoardFocus = function() return {} end
+  check(key("DOWN") == true and w1.navState.focus == "tabs", "輸入框有焦點時往下傳")
+  GetCurrentKeyBoardFocus = nil
+  check(key("DOWN") == false and w1.navState.focus == "title", "沒有 GetCurrentKeyBoardFocus 函式時照常處理")
+  GetCurrentKeyBoardFocus = function() return nil end
+  IsShiftKeyDown = function() return true end
+  check(key("DOWN") == true, "按著修飾鍵時往下傳")
+  IsShiftKeyDown = function() return false end
+
+  -- 面板已不可見但沒收到 OnHide（例：整個選項面板被關掉）：按鍵往下傳並停止接管
+  rawset(w1.panel, "visible", false)
+  check(key("DOWN") == true and rawget(navKeys, "kb") == false, "面板已不可見時往下傳並停用")
+  fireHook(w1.panel, "OnShow")
+
+  -- 戰鬥：鍵盤 API 在戰鬥鎖定中呼叫會被遊戲封鎖（2026-11-21 使用者遇到 ADDON_ACTION_BLOCKED）
+  local before = #navKeys.calls
+  inCombat = true; navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_DISABLED")
+  check(#navKeys.calls == before, "已在戰鬥鎖定中時進戰鬥事件不呼叫任何鍵盤 API")
+  inCombat = false; navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_ENABLED")
+  navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_DISABLED") -- 事件觸發時鎖定還沒開始：趁機停用
+  check(rawget(navKeys, "kb") == false, "進入戰鬥（鎖定前）停用鍵盤接管")
+  inCombat = true
+  local n = #navKeys.calls
+  navKeys.scripts.OnKeyDown(navKeys, "DOWN")
+  check(#navKeys.calls == n, "戰鬥中 handler 不呼叫任何鍵盤 API")
+  inCombat = false; navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_ENABLED")
+  check(rawget(navKeys, "kb") == true and last("prop:") == "prop:true", "戰鬥結束且設定仍開時恢復接管")
+
+  -- 關閉設定頁：停用；另一份畫面顯示時改作用在那一份
+  fireHook(w1.panel, "OnHide")
+  check(rawget(navKeys, "kb") == false, "設定頁關閉後停用")
+  inCombat = true
+  fireHook(w1.panel, "OnShow")
+  check(rawget(navKeys, "kb") ~= true, "戰鬥中打開設定不接管")
+  inCombat = false; navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_ENABLED")
+  check(rawget(navKeys, "kb") == true, "戰鬥結束後才接管")
+  check(w1.navState.revealed == false, "重新顯示時亮框重置")
+  fireHook(w1.panel, "OnHide")
+  SlashCmdList.BIGFONTTUNER("") -- 永恆跳不到選項頁：開獨立視窗
+  local w2 = ns.settingsInstances[2]
+  check(w2 ~= nil, "獨立視窗也有一份畫面")
+  if w2 then
+    fireHook(w2.panel, "OnShow")
+    key("DOWN"); key("DOWN")
+    check(w2.navState.focus == "tabs" and w1.navState.focus == nil, "按鍵作用在目前顯示的那一份")
+    fireHook(w2.panel, "OnHide")
+  end
+
+  -- 保底開關與除錯輸出
+  SlashCmdList.BIGFONTTUNER("nav off")
+  check(ns.db.navDisabled == true, "/bft nav off 存進設定")
+  fireHook(w1.panel, "OnShow")
+  check(rawget(navKeys, "kb") ~= true, "關掉後設定頁顯示也不接管")
+  SlashCmdList.BIGFONTTUNER("nav on")
+  check(ns.db.navDisabled == false and rawget(navKeys, "kb") == true, "/bft nav on 立即恢復")
+  local printed = {}
+  print = function(s) printed[#printed + 1] = tostring(s) end
+  SlashCmdList.BIGFONTTUNER("navdebug")
+  key("UP")
+  print = function() end
+  local saw = false
+  for _, s in ipairs(printed) do if s:find("UP", 1, true) and s:find("shift", 1, true) then saw = true end end
+  check(ns.db.navDebug == true and saw, "/bft navdebug 印出按鍵與修飾鍵狀態")
+  fireHook(w1.panel, "OnHide")
+end
+
+-- 14. 沒開過設定時，戰鬥進出完全不碰鍵盤 API；被遊戲封鎖的動作記進錯誤紀錄
+do
+  LOCALE = "zhTW"; navKeys = nil; ns = boot(nil, false); login()
+  local n = #navKeys.calls
+  for _, lock in ipairs({ false, true }) do
+    inCombat = lock
+    navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_DISABLED")
+    navKeys.scripts.OnEvent(navKeys, "PLAYER_REGEN_ENABLED")
+  end
+  inCombat = false
+  check(#navKeys.calls == n, "設定沒開時進出戰鬥不呼叫鍵盤 API")
+  local logEvents
+  for _, f in ipairs(frames) do
+    local e = rawget(f, "events")
+    if e and e.ADDON_ACTION_BLOCKED then logEvents = f end
+  end
+  check(logEvents ~= nil, "錯誤紀錄監聽 ADDON_ACTION_BLOCKED")
+  if logEvents then
+    logEvents.scripts.OnEvent(logEvents, "ADDON_ACTION_BLOCKED", "OtherAddon", "Foo()")
+    logEvents.scripts.OnEvent(logEvents, "ADDON_ACTION_BLOCKED", "BigFontTuner", "Frame:EnableKeyboard()")
+    local found, other = false, false
+    for _, e in ipairs(ns.ErrorLog.entries()) do
+      if e.msg:find("EnableKeyboard", 1, true) then found = true end
+      if e.msg:find("Foo()", 1, true) then other = true end
+    end
+    check(found and not other, "記錄自己被封鎖的動作，不記別的插件")
+  end
+end
+
+-- 發布白名單：toc 載入的每個 .lua 都要在 .publish-allowlist，否則 GitHub 發布端缺檔（CurseForge zip 走 toc，不會發現）
+do
+  local allow = {}
+  for raw in io.lines(DIR .. "/.publish-allowlist") do allow[(raw:gsub("\r", ""))] = true end
+  for raw in io.lines(DIR .. "/BigFontTuner.toc") do
+    local file = raw:gsub("\r", "")
+    if file:match("%.lua$") then check(allow[file] == true, "白名單包含 toc 的 " .. file) end
+  end
 end
 
 os.exit(FAILED and 1 or 0)

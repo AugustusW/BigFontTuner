@@ -2,7 +2,7 @@
 ## Title: BigFontTuner
 ## Notes: Adjust text size, font and outline with a live preview (quest, chat, gossip, map, bags, professions). Support: support@augustusw.com
 ## Notes-zhTW: 調整遊戲文字的大小、字型與描邊，附即時預覽（任務、聊天、對話、地圖、背包、專業）。問題回報：support@augustusw.com
-## Version: 0.7.0
+## Version: 0.8.0
 ## Author: AugustusW
 ## X-Curse-Project-ID: 1788540
 ## X-Email: support@augustusw.com
@@ -19,4 +19,5 @@ Locale.lua
 Fonts.lua
 Core.lua
 Professions.lua
+Nav.lua
 Settings.lua
